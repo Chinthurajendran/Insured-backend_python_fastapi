@@ -18,24 +18,20 @@ async def create_user_account(user_data:UserCreate,session:AsyncSession = Depend
 
     email = user_data.email
     username = user_data.username
-    # Check if email or username already exists
     user_exists_with_email = await user_service.exist_email(email,session)
     user_exists_with_username = await user_service.exist_username(username,session)
     if user_exists_with_email:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User with email already exists")
     if user_exists_with_username:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User with username already exists")
-        # Check if passwords match
     if user_data.password != user_data.confirm_password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
     
     new_user = await user_service.create_user(user_data,session)
-    # return new_user
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
         content={
             "message": "Registration successful! Please log in.",
-            # "user": new_user # You can return the user data here as well if needed
         }
     )
 

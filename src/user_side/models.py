@@ -22,7 +22,7 @@ class usertable(SQLModel, table=True):
     date_of_birth: date = Field(default=date(1997, 12, 15), nullable=True)
     annual_income: int = Field(default=500000)
     marital_status: str = Field(default='Single', nullable=True)
-    city: str = Field(default="Kochi", max_length=100)  # ADDED DEFAULT
+    city: str = Field(default="Kochi", max_length=100)
     latitude: float = Field(default=0.0)
     longitude: float = Field(default=0.0)
     policy_status: bool = Field(default=False)

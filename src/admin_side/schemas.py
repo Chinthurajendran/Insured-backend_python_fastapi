@@ -2,14 +2,9 @@ from pydantic import BaseModel
 import uuid
 from datetime import date, datetime
 
-# class Admin_login(BaseModel):
-#     email:str
-#     password:str
-
 class Admin_login(BaseModel):
     username :str
     password:str
-
 
 class PolicyCreateResponse(BaseModel):
     policy_uid: uuid.UUID

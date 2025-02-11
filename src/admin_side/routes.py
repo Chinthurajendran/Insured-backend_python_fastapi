@@ -24,64 +24,11 @@ from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
 import logging
 
-
-
 logger = logging.getLogger(__name__)
-
 
 admin_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
-REFRESH_TOKEN_EXPIRY = 2  # in days
-
-
-# @admin_router.post("/admin_login")
-# async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depends(get_session)):
-#     email = login_data.email
-#     password = login_data.password
-
-#     result = await session.execute(select(usertable).where(and_(usertable.email == email, usertable.is_admin == True)))
-#     user = result.scalars().first()
-
-#         # Debugging: Print the retrieved user and is_admin status
-#     if user:
-#         print(f"User Found: {user.email}, is_admin: {user.is_admin}")
-
-#     if not user:
-#         raise HTTPException(status_code=404, detail="User not found")
-#     else:
-#         password_vaild = verify_password(password, user.password)
-
-#         if password_vaild:
-#             access_token = create_access_token(
-#                 user_data={
-#                     'email': user.email,
-#                     'user_id': str(user.user_id)
-#                 }
-#             )
-
-#             refresh_token = create_access_token(
-#                 user_data={
-#                     'email': user.email,
-#                     'user_id': str(user.user_id)
-#                 },
-#                 refresh=True,
-#                 expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
-#             )
-#             return JSONResponse(
-#                 status_code=status.HTTP_200_OK,
-#                 content={
-#                     "message": "Login succesfull",
-#                     "access_token": access_token,
-#                     "refresh_token": refresh_token,
-#                     "user_id": str(user.user_id),
-#                     "user_name": str(user.username)
-#                 }
-#             )
-#     raise HTTPException(
-#         status_code=status.HTTP_403_FORBIDDEN,
-#         detail="Invalid Email  or Password"
-#     )
-
+REFRESH_TOKEN_EXPIRY = 2  
 
 @admin_router.post("/admin_login")
 async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depends(get_session)):
@@ -117,7 +64,6 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
     )
 
 
-
 @admin_router.get("/user_date", response_model=list[dict])
 async def user_list(session: AsyncSession = Depends(get_session),
                     user_details=Depends(access_token_bearer)):
@@ -125,19 +71,15 @@ async def user_list(session: AsyncSession = Depends(get_session),
     result = await session.execute(select(usertable))
     users = result.scalars().all()
 
-    # Convert SQLAlchemy objects to dictionaries & handle UUID + datetime conversion
     users_dict = []
     for user in users:
-        user_dict = user.__dict__.copy()  # Copy dict to avoid modifying the original
-        # Remove SQLAlchemy's internal state
+        user_dict = user.__dict__.copy()
         user_dict.pop('_sa_instance_state', None)
 
-        # Convert UUID and datetime fields to strings
         for key, value in user_dict.items():
             if isinstance(value, uuid.UUID):
-                user_dict[key] = str(value)  # Convert UUID to string
+                user_dict[key] = str(value)
             elif isinstance(value, datetime) or isinstance(value, date):
-                # Convert datetime to ISO string
                 user_dict[key] = value.isoformat()
 
         users_dict.append(user_dict)
@@ -153,7 +95,6 @@ async def create_policy(policy_data: PolicyCreateRequest, session: AsyncSession 
     logger.info(f"Received request data: {policy_data}")
 
     try:
-        # Check if policy_id already exists
         result = await session.execute(select(policytable).where(policytable.policy_id == policy_data.policy_id))
         existing_policy = result.scalar()
         if existing_policy:
@@ -190,13 +131,6 @@ async def create_policy(policy_data: PolicyCreateRequest, session: AsyncSession 
     except ValidationError as e:
         logger.error(f"Validation error: {e}")
         raise HTTPException(status_code=422, detail=e.errors())
-    except IntegrityError as e:
-        logger.error(f"Integrity error: {e}")
-        if 'duplicate key value violates unique constraint "policytable_policy_id_key"' in str(e.orig):
-            raise HTTPException(status_code=400, detail="Policy with the given policy_id already exists.")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-    except HTTPException as e:
-        raise e  # Re-raise HTTPException to be handled by FastAPI
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
         raise HTTPException(status_code=500, detail="Internal Server Error")
@@ -219,17 +153,3 @@ async def policy_data(session: AsyncSession = Depends(get_session),
         content={"policy": policy_list}
     )
 
-
-@admin_router.put("/isadmin/{userId}", response_model=list[dict])
-async def isadmin(userId: UUID, session: AsyncSession = Depends(get_session),
-                  policy_details=Depends(access_token_bearer)):
-    result = await session.execute(select(usertable).where(usertable.user_id == userId))
-    user = result.scalars().first()
-
-    if not user:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    user.is_admin = True
-
-    await session.commit()
-    return JSONResponse(status_code=200, content={"message": "Updated."})

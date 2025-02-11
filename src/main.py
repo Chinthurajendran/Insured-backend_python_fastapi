@@ -21,16 +21,13 @@ app.include_router(admin_router, prefix="/admin_auth", tags=["Admin Authenticati
 app.include_router(agent_router, prefix="/agent_auth", tags=["Agent Authentication"])
 
 
-
-
-# Set up CORS middleware
 origins = [
     "http://localhost:5173",
 ]
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # You can replace "*" with your frontend's domain if you want more control.
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -44,14 +41,3 @@ from pathlib import Path
 
 app.mount("/uploads", StaticFiles(directory="D:/BROTOTYPE BOX/TASK/Week 23 1.0/Project 5.0/frontend/src/assets/uploads"), name="uploads")
 
-# from fastapi import FastAPI
-# from fastapi.staticfiles import StaticFiles
-# import os
-
-# UPLOAD_DIR = "uploads"
-# os.makedirs(UPLOAD_DIR, exist_ok=True)
-
-# app = FastAPI()
-
-# # Serve uploaded files
-# app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")

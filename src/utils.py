@@ -47,8 +47,6 @@ def decode_token(token:str):
     except jwt.PyJWTError as e:
         logging.exception(e)
         return None
-# import loginpage from "../../assets/agent.jpg";
-# "D:\\BROTOTYPE BOX\\TASK\\Week 23 1.0\\Project 5.0\\frontend\\src\\assets\\uploads/id.png"
 
 UPLOAD_DIR = Path("D:/BROTOTYPE BOX/TASK/Week 23 1.0/Project 5.0/frontend/src/assets/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)

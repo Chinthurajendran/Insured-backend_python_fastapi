@@ -1,6 +1,3 @@
-
-
-
 from fastapi import APIRouter, Depends, status, UploadFile, File, HTTPException,Form
 from fastapi.responses import JSONResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
@@ -43,9 +40,7 @@ async def agent_signup(username: str = Form(...),
         agent_data = AgentCreateRequest(username=username, email=email, password=password, 
                                  confirm_password=confirm_password,phone=phone,gender=gender,
                                  date_of_birth=date_of_birth,city=city)
-        logger.info(f"Received signup request for email: {email}")
-
-        # Log received data
+        logger.info(f"Received signup request for email: {email}")     
         logger.info(f"Received agent data: {agent_data.dict()}")
         logger.info(f"Received id_proof: {id_proof.filename if id_proof else 'No file uploaded'}")
 
@@ -64,41 +59,6 @@ async def agent_signup(username: str = Form(...),
     except Exception as e:
         logger.error(f"Error during agent signup: {e}")
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
-    
-
-# @agent_router.post("/agent_sign", response_model=AgentCreateResponse, status_code=status.HTTP_201_CREATED)
-# async def agent_signup(agent_data: AgentCreateRequest = Depends(),
-#                        id_proof: UploadFile = File(...),
-#                        session: AsyncSession = Depends(get_session)):
-#     try:
-#         # date_of_birth = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
-#         # agent_data = AgentCreateRequest(username=username, email=email, password=password, 
-#         #                          confirm_password=confirm_password,phone=phone,gender=gender,
-#         #                          date_of_birth=date_of_birth,city=city)
-#         # logger.info(f"Received signup request for email: {email}")
-
-#         # Log received data
-#         logger.info(f"Received agent data: {agent_data.dict()}")
-#         logger.info(f"Received id_proof: {id_proof.filename if id_proof else 'No file uploaded'}")
-
-#         agent_exists_with_email = await agent_service.exist_email(agent_data.email, session)
-#         if agent_exists_with_email:
-#             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User with email already exists")
-
-#         if agent_data.password != agent_data.confirm_password:
-#             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
-
-#         new_agent = await agent_service.create_user(agent_data, id_proof, session)
-
-#         return JSONResponse(
-#             status_code=status.HTTP_201_CREATED,
-#             content={"message": "Registration successful! Please log in."}
-#         )
-#     except Exception as e:
-#         logger.error(f"Error during agent signup: {e}")
-#         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
-    
-    
 
 @agent_router.get("/agent_state", response_model=list[dict])
 async def agent_aproval(
@@ -112,13 +72,12 @@ async def agent_aproval(
         )
     )
     
-    agents = result.all()  # Fetch all rows
+    agents = result.all() 
 
     agent_dict_list = []
     for agent in agents:
-        agents_dict = dict(zip(result.keys(), agent))  # Convert to dictionary
+        agents_dict = dict(zip(result.keys(), agent))
         
-        # Convert UUID fields to strings
         for key, value in agents_dict.items():
             if isinstance(value, uuid.UUID):
                 agents_dict[key] = str(value)
@@ -143,12 +102,10 @@ async def agent_approval_list(agentId: UUID, session: AsyncSession = Depends(get
         "email": agent.agent_email,
         "phone": agent.phone,
         "gender": agent.gender,
-        "date_of_birth": agent.date_of_birth.isoformat() if agent.date_of_birth else None,  # ✅ FIXED
+        "date_of_birth": agent.date_of_birth.isoformat() if agent.date_of_birth else None,
         "idproof": agent.agent_idproof,
-        # "idproof": agent.agent_idproof.split("\\")[-1],
         "city": agent.city,
     }
-
     return JSONResponse(status_code=200, content={"agents": agent_data})
 
 
@@ -195,7 +152,7 @@ async def agent_approval_list(session: AsyncSession = Depends(get_session), user
                                           AgentTable.phone, AgentTable.gender,
                                           AgentTable.date_of_birth,
                                           AgentTable.agent_profile,
-                                          AgentTable.agent_login_status, AgentTable.city,))
+                                          AgentTable.agent_login_status, AgentTable.city).where(AgentTable.approval_status == 'approved'))
     agents = result.all()
 
     if not agents:
@@ -205,7 +162,7 @@ async def agent_approval_list(session: AsyncSession = Depends(get_session), user
     for row in agents:
         if len(row) < 8:
             print(f"Row length is less than expected: {row}")
-            continue  # Skip the row if it doesn't have the expected number of elements
+            continue
 
         agent_data.append({
             "name": row[0],

@@ -7,7 +7,6 @@ from enum import Enum as PyEnum
 from sqlalchemy import Enum
 
 
-# Define Enum class
 class ApprovalStatus(str, PyEnum):
     approved = "approved"
     processing = "processing"
@@ -37,8 +36,6 @@ class AgentTable(SQLModel, table=True):
     longitude: float = Field(default=0.0, nullable=True)
     agent_login_status: bool = Field(default=False, nullable=True)
     busy_status: bool = Field(default=False, nullable=True)
-    # approval_status: bool = Field(default=False, nullable=True)
-        # Change approval_status to Enum
     approval_status: ApprovalStatus = Field(
         sa_column=Column(Enum(ApprovalStatus), default=ApprovalStatus.processing)
     )
