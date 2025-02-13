@@ -9,10 +9,10 @@ from fastapi.middleware.cors import CORSMiddleware
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🚀 Server is starting...")
+    print("Server is starting...")
     await init_db()
     yield
-    print("🛑 Server is stopping...")
+    print("Server is stopping...")
 
 app = FastAPI(lifespan=lifespan)
 

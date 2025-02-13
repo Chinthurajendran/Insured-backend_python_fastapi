@@ -97,8 +97,6 @@ async def create_policy(policy_data: PolicyCreateRequest, session: AsyncSession 
     try:
         result = await session.execute(select(policytable).where(policytable.policy_id == policy_data.policy_id))
         existing_policy = result.scalar()
-        if existing_policy:
-            raise HTTPException(status_code=400, detail="Policy with the given policy_id already exists.")
     
         new_policy = policytable(
             policy_id=policy_data.policy_id,
@@ -133,7 +131,7 @@ async def create_policy(policy_data: PolicyCreateRequest, session: AsyncSession 
         raise HTTPException(status_code=422, detail=e.errors())
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Internal Server Error")
+        raise HTTPException(status_code=500, detail="Policy with the given policy_id already exists.")
 
 
 @admin_router.get("/policy_list", response_model=list[dict])

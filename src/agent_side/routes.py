@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, UploadFile, File, HTTPException,Form
+from fastapi import APIRouter, Depends, status, UploadFile, File, HTTPException,Form,Request,FastAPI
 from fastapi.responses import JSONResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 from .schemas import *
@@ -40,14 +40,12 @@ async def agent_signup(username: str = Form(...),
         agent_data = AgentCreateRequest(username=username, email=email, password=password, 
                                  confirm_password=confirm_password,phone=phone,gender=gender,
                                  date_of_birth=date_of_birth,city=city)
-        logger.info(f"Received signup request for email: {email}")     
-        logger.info(f"Received agent data: {agent_data.dict()}")
-        logger.info(f"Received id_proof: {id_proof.filename if id_proof else 'No file uploaded'}")
 
         agent_exists_with_email = await agent_service.exist_email(email, session)
-        if agent_exists_with_email:
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User with email already exists")
 
+        if agent_exists_with_email:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail= "User with email already exists")
+        
         if agent_data.password != agent_data.confirm_password:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
 
@@ -57,7 +55,6 @@ async def agent_signup(username: str = Form(...),
             content={"message": "Registration successful! Please log in."}
         )
     except Exception as e:
-        logger.error(f"Error during agent signup: {e}")
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
 
 @agent_router.get("/agent_state", response_model=list[dict])

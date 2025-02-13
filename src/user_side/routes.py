@@ -16,14 +16,14 @@ REFRESH_TOKEN_EXPIRY = 2
 @auth_router.post("/signup",response_model = UserModel,status_code= status.HTTP_201_CREATED )
 async def create_user_account(user_data:UserCreate,session:AsyncSession = Depends(get_session)):
 
-    email = user_data.email
-    username = user_data.username
+    email = user_data.email.lower()  
+    username = user_data.username.lower()
     user_exists_with_email = await user_service.exist_email(email,session)
     user_exists_with_username = await user_service.exist_username(username,session)
     if user_exists_with_email:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User with email already exists")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Email already exists")
     if user_exists_with_username:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="User with username already exists")
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Username already exists")
     if user_data.password != user_data.confirm_password:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
     
