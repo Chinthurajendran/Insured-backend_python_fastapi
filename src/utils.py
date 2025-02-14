@@ -5,6 +5,7 @@ from src.config import Config
 import uuid
 import logging
 from pathlib import Path
+import random
 
 
 password_context= CryptContext(
@@ -47,6 +48,10 @@ def decode_token(token:str):
     except jwt.PyJWTError as e:
         logging.exception(e)
         return None
+    
 
 UPLOAD_DIR = Path("D:/BROTOTYPE BOX/TASK/Week 23 1.0/Project 5.0/frontend/src/assets/uploads")
 UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+def random_code():
+    return random.randint(100000, 999999)

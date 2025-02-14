@@ -29,5 +29,7 @@ class AgentCreateResponse(BaseModel):
 
 
 class AgentLoginModel(BaseModel):
-    email: EmailStr
+    agentid: str
     password:str
+    latitude: Optional[float] = None
+    longitude: Optional[float] = None

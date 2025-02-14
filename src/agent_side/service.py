@@ -3,9 +3,7 @@ from .schemas import *
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from datetime import datetime
-from src.utils import generate_passwd_hash,UPLOAD_DIR
-
-
+from src.utils import generate_passwd_hash,UPLOAD_DIR,random_code
 import logging
 import aiofiles
 from fastapi import UploadFile,File
@@ -13,14 +11,14 @@ from fastapi import UploadFile,File
 logger = logging.getLogger(__name__)
 
 class AgentService:
-    async def get_agent_by_email(self, email: str, session: AsyncSession):
-        statement = select(AgentTable).where(AgentTable.agent_email == email)
+    async def get_agent_by_agentid(self, agentid: str, session: AsyncSession):
+        statement = select(AgentTable).where(AgentTable.agent_userid == agentid)
         result = await session.exec(statement)
         agent = result.first()
         return agent
 
-    async def exist_email(self, email: str, session: AsyncSession):
-        agents = await self.get_agent_by_email(email, session)
+    async def exist_email(self, agentid: str, session: AsyncSession):
+        agents = await self.get_agent_by_agentid(agentid, session)
         return True if agents is not None else False
 
     async def create_user(
@@ -37,6 +35,8 @@ class AgentService:
         async with aiofiles.open(file_path, "wb") as buffer:
             content = await id_proof.read()
             await buffer.write(content)
+        
+        code = random_code()
 
         new_agent = AgentTable(
             agent_name=agent_data_dict["username"],
@@ -45,6 +45,7 @@ class AgentService:
             gender=agent_data_dict["gender"],
             date_of_birth=agent_data_dict["date_of_birth"],
             city=agent_data_dict["city"],
+            agent_userid = f"AG{code}",
             password=generate_passwd_hash(agent_data_dict["password"]),
             agent_idproof=str(file_path),
             create_at=create_at,
