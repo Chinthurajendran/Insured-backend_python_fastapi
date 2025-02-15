@@ -1,5 +1,5 @@
 from .schemas import *
-from fastapi import APIRouter, status, Depends
+from fastapi import APIRouter, status, Depends,Form
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.db.database import get_session
 from fastapi.responses import JSONResponse
@@ -23,6 +23,10 @@ from fastapi import HTTPException
 from sqlalchemy.future import select
 from sqlalchemy.exc import IntegrityError
 import logging
+from src.agent_side.models import*
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+from src.mail import mail_config
+
 
 logger = logging.getLogger(__name__)
 
@@ -37,15 +41,15 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
     password = login_data.password
 
     if username == 'Admin' and password == 'Admin':
-        access_token = create_access_token(
+        admin_access_token = create_access_token(
             user_data={
-                'username': username,
+                'admin_username': username,
             }
         )
 
-        refresh_token = create_access_token(
+        admin_refresh_token = create_access_token(
             user_data={
-                'username': username,
+                'admin_username': username,
             },
             refresh=True,
             expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
@@ -54,9 +58,9 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
             status_code=status.HTTP_200_OK,
             content={
                 "message": "Login successful",
-                "access_token": access_token,
-                "refresh_token": refresh_token,
-                "user_name": username
+                "admin_access_token": admin_access_token,
+                "admin_refresh_token": admin_refresh_token,
+                "admin_username": username
             }
         )
     raise HTTPException(
@@ -166,3 +170,168 @@ async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer(
         return JSONResponse(content={"access_token": new_access_token})
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Invalid or expired token")
+
+
+
+
+@admin_router.get("/agent_management", response_model=list[dict])
+async def agent_management(
+    session: AsyncSession = Depends(get_session),
+    agent_details=Depends(access_token_bearer)
+):
+    result = await session.execute(
+        select(
+            AgentTable.agent_id, AgentTable.agent_name,
+            AgentTable.agent_email, AgentTable.approval_status
+        ).where(AgentTable.approval_status == "processing")
+    )
+
+    agents = result.all()
+
+    agent_dict_list = []
+    for agent in agents:
+        agents_dict = dict(zip(result.keys(), agent))
+
+        for key, value in agents_dict.items():
+            if isinstance(value, uuid.UUID):
+                agents_dict[key] = str(value)
+
+        agent_dict_list.append(agents_dict)
+    return JSONResponse(
+        status_code=200,
+        content={"agents": agent_dict_list}
+    )
+
+
+@admin_router.get("/agent_approval_and_rejection/{agentId}", response_model=list[dict])
+async def agent_approval_and_rejection(agentId: UUID, session: AsyncSession = Depends(get_session), agent_details=Depends(access_token_bearer)):
+
+    result = await session.execute(select(AgentTable).where(AgentTable.agent_id == agentId))
+    agent = result.scalars().first()
+
+    if not agent:
+        return JSONResponse(status_code=404, content={"message": "Agent not found"})
+
+    agent_data = {
+        "agent_userid": agent.agent_userid,
+        "name": agent.agent_name,
+        "email": agent.agent_email,
+        "phone": agent.phone,
+        "gender": agent.gender,
+        "date_of_birth": agent.date_of_birth.isoformat() if agent.date_of_birth else None,
+        "idproof": agent.agent_idproof,
+        "city": agent.city,
+    }
+    return JSONResponse(status_code=200, content={"agents": agent_data})
+
+
+@admin_router.put("/agent_approved/{agentId}", response_model=dict)
+async def agent_approval(agentId: UUID, session: AsyncSession = Depends(get_session), user_details=Depends(access_token_bearer)):
+    logging.info(f"Attempting to approve agent with ID: {agentId}")
+    logging.info(f"User details: {user_details}")
+
+    result = await session.execute(select(AgentTable).where(AgentTable.agent_id == agentId))
+    agent = result.scalars().first()
+
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    agent.approval_status = ApprovalStatus.approved
+
+
+    logging.info(f"Using mail configuration: {mail_config}")
+
+    message = MessageSchema(
+        subject="Your Request Has Been Accepted",
+        recipients=[agent.agent_email],
+        body=f"Hello {agent.agent_name},\n\n"
+        f"We are pleased to inform you that your request has been accepted by the admin.\n\n"
+        f"To log in and check your status, please use the following agent ID: {agent.agent_userid}\n\n"
+        f"Best regards,\n"
+        f"Your Team",
+        subtype="plain"
+    )
+
+    fm = FastMail(mail_config)
+    try:
+        await fm.send_message(message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+    await session.commit()
+    return JSONResponse(status_code=200, content={"message": "Updated."})
+
+
+
+@admin_router.put("/agent_rejected/{agentId}", response_model=dict)
+async def agent_rejected(agentId: UUID, reason: str = Form(...), session: AsyncSession = Depends(get_session), agent_details=Depends(access_token_bearer)):
+
+    result = await session.execute(select(AgentTable).where(AgentTable.agent_id == agentId))
+    agent = result.scalars().first()
+
+    if not reason or reason.strip() == "":
+        raise HTTPException(
+            status_code=400, detail="Please provide a reason for rejection.")
+
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    agent.approval_status = ApprovalStatus.rejected
+    agent.rejection_reason = reason
+
+    message = MessageSchema(
+            subject="Your Agent Registration Request Has Been Rejected",
+            recipients=[agent.agent_email],
+            body=f"Hello {agent.agent_name},\n\n"
+                f"We regret to inform you that your request to register as an agent has been rejected.\n\n"
+                f"Reason for rejection: {reason}\n\n"
+                f"If you believe this was a mistake or need further clarification, please feel free to contact our support team.\n\n"
+                f"Best regards,\n"
+                f"Your Team",
+            subtype="plain"
+        )
+
+    fm = FastMail(mail_config)
+    try:
+        await fm.send_message(message)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal Server Error")
+
+    await session.commit()
+    return JSONResponse(status_code=200, content={"message": "Updated."})
+
+
+
+
+@admin_router.get("/agent_list", response_model=list[dict])
+async def agent_approved_list(session: AsyncSession = Depends(get_session), user_details=Depends(access_token_bearer)):
+
+    result = await session.execute(select(AgentTable.agent_name, AgentTable.agent_email,AgentTable.agent_userid,
+                                          AgentTable.phone, AgentTable.gender,
+                                          AgentTable.date_of_birth,
+                                          AgentTable.agent_profile,
+                                          AgentTable.agent_login_status, AgentTable.city).where(AgentTable.approval_status == 'approved'))
+    agents = result.all()
+
+    if not agents:
+        return JSONResponse(status_code=404, content={"message": "Agent not found"})
+
+    agent_data = []
+    for row in agents:
+        if len(row) < 9:
+            print(f"Row length is less than expected: {row}")
+            continue
+
+        agent_data.append({
+            "name": row[0],
+            "email": row[1],
+            "agentid": row[2],
+            "phone": row[3],
+            "gender": row[4],
+            "date_of_birth": row[5].isoformat(),
+            "profile": row[6],
+            "status": row[7],
+            "city": row[8],
+        })
+
+    return JSONResponse(status_code=200, content={"agents": agent_data})

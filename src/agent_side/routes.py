@@ -64,7 +64,6 @@ async def agent_signup(username: str = Form(...),
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
     
 
-
 @agent_router.post("/agent_login")
 async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession = Depends(get_session)) -> JSONResponse:
     agentid = agent_login_data.agentid
@@ -89,7 +88,7 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
 
 
         if password_valid:
-            access_token = create_access_token(
+            agent_access_token = create_access_token(
                 user_data={
                     'agent_email': user.agent_email,
                     'agnet_id': str(user.agent_id),
@@ -98,7 +97,7 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
                 }
             )
 
-            refresh_token = create_access_token(
+            agent_refresh_token = create_access_token(
                 user_data={
                     'agent_email': user.agent_email,
                     'agnet_id': str(user.agent_id),
@@ -112,8 +111,8 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
                 status_code=status.HTTP_200_OK,
                 content={
                     "message": "Login successful",
-                    "access_token": access_token,
-                    "refresh_token": refresh_token,
+                    "agent_access_token": agent_access_token,
+                    "agent_refresh_token": agent_refresh_token,
                     'agent_email': user.agent_email,
                     'agnet_id': str(user.agent_id),
                     'agent_name': str(user.agent_name),
@@ -133,7 +132,6 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
     )
 
 
-
 @agent_router.put("/agent_logout/{agentId}")
 async def logout_agent(
     agentId: UUID,
@@ -150,169 +148,6 @@ async def logout_agent(
     await session.commit()
     
     return JSONResponse(status_code=200, content={"message": "Agent logged out successfully."})
-
-
-
-@agent_router.get("/agent_approval/{agentId}", response_model=list[dict])
-async def agent_approval_list(agentId: UUID, session: AsyncSession = Depends(get_session), user_details=Depends(access_token_bearer)):
-
-    result = await session.execute(select(AgentTable).where(AgentTable.agent_id == agentId))
-    agent = result.scalars().first()
-
-    if not agent:
-        return JSONResponse(status_code=404, content={"message": "Agent not found"})
-
-    agent_data = {
-        "agent_userid": agent.agent_userid,
-        "name": agent.agent_name,
-        "email": agent.agent_email,
-        "phone": agent.phone,
-        "gender": agent.gender,
-        "date_of_birth": agent.date_of_birth.isoformat() if agent.date_of_birth else None,
-        "idproof": agent.agent_idproof,
-        "city": agent.city,
-    }
-    return JSONResponse(status_code=200, content={"agents": agent_data})
-
-
-@agent_router.get("/agent_state", response_model=list[dict])
-async def agent_aproval(
-    session: AsyncSession = Depends(get_session),
-    agent_details=Depends(access_token_bearer)
-):
-    result = await session.execute(
-        select(
-            AgentTable.agent_id, AgentTable.agent_name,
-            AgentTable.agent_email, AgentTable.approval_status
-        )
-    )
-
-    agents = result.all()
-
-    agent_dict_list = []
-    for agent in agents:
-        agents_dict = dict(zip(result.keys(), agent))
-
-        for key, value in agents_dict.items():
-            if isinstance(value, uuid.UUID):
-                agents_dict[key] = str(value)
-
-        agent_dict_list.append(agents_dict)
-    return JSONResponse(
-        status_code=200,
-        content={"agents": agent_dict_list}
-    )
-
-
-@agent_router.put("/agent_rejected/{agentId}", response_model=dict)
-async def agent_reject(agentId: UUID, reason: str = Form(...), session: AsyncSession = Depends(get_session), user_details=Depends(access_token_bearer)):
-    logging.info(f"Attempting to reject agent with ID: {agentId}")
-    logging.info(f"User details: {user_details}")
-
-    result = await session.execute(select(AgentTable).where(AgentTable.agent_id == agentId))
-    agent = result.scalars().first()
-
-    if not reason or reason.strip() == "":
-        raise HTTPException(
-            status_code=400, detail="Please provide a reason for rejection.")
-
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    agent.approval_status = ApprovalStatus.rejected
-    agent.rejection_reason = reason
-
-    message = MessageSchema(
-            subject="Your Agent Registration Request Has Been Rejected",
-            recipients=[agent.agent_email],
-            body=f"Hello {agent.agent_name},\n\n"
-                f"We regret to inform you that your request to register as an agent has been rejected.\n\n"
-                f"Reason for rejection: {reason}\n\n"
-                f"If you believe this was a mistake or need further clarification, please feel free to contact our support team.\n\n"
-                f"Best regards,\n"
-                f"Your Team",
-            subtype="plain"
-        )
-
-    fm = FastMail(mail_config)
-    try:
-        await fm.send_message(message)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-
-    await session.commit()
-    return JSONResponse(status_code=200, content={"message": "Updated."})
-
-
-@agent_router.put("/agent_approved/{agentId}", response_model=dict)
-async def agent_approve(agentId: UUID, session: AsyncSession = Depends(get_session), user_details=Depends(access_token_bearer)):
-    logging.info(f"Attempting to approve agent with ID: {agentId}")
-    logging.info(f"User details: {user_details}")
-
-    result = await session.execute(select(AgentTable).where(AgentTable.agent_id == agentId))
-    agent = result.scalars().first()
-
-    if not agent:
-        raise HTTPException(status_code=404, detail="Agent not found")
-
-    agent.approval_status = ApprovalStatus.approved
-
-
-    logging.info(f"Using mail configuration: {mail_config}")
-
-    message = MessageSchema(
-        subject="Your Request Has Been Accepted",
-        recipients=[agent.agent_email],
-        body=f"Hello {agent.agent_name},\n\n"
-        f"We are pleased to inform you that your request has been accepted by the admin.\n\n"
-        f"To log in and check your status, please use the following agent ID: {agent.agent_userid}\n\n"
-        f"Best regards,\n"
-        f"Your Team",
-        subtype="plain"
-    )
-
-    fm = FastMail(mail_config)
-    try:
-        await fm.send_message(message)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail="Internal Server Error")
-
-    await session.commit()
-    return JSONResponse(status_code=200, content={"message": "Updated."})
-
-
-@agent_router.get("/agent_list", response_model=list[dict])
-async def agent_approval_list(session: AsyncSession = Depends(get_session), user_details=Depends(access_token_bearer)):
-
-    result = await session.execute(select(AgentTable.agent_name, AgentTable.agent_email,AgentTable.agent_userid,
-                                          AgentTable.phone, AgentTable.gender,
-                                          AgentTable.date_of_birth,
-                                          AgentTable.agent_profile,
-                                          AgentTable.agent_login_status, AgentTable.city).where(AgentTable.approval_status == 'approved'))
-    agents = result.all()
-
-    if not agents:
-        return JSONResponse(status_code=404, content={"message": "Agent not found"})
-
-    agent_data = []
-    for row in agents:
-        if len(row) < 9:
-            print(f"Row length is less than expected: {row}")
-            continue
-
-        agent_data.append({
-            "name": row[0],
-            "email": row[1],
-            "agentid": row[2],
-            "phone": row[3],
-            "gender": row[4],
-            "date_of_birth": row[5].isoformat(),
-            "profile": row[6],
-            "status": row[7],
-            "city": row[8],
-        })
-
-    return JSONResponse(status_code=200, content={"agents": agent_data})
 
 
 
