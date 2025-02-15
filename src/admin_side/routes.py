@@ -5,7 +5,7 @@ from src.db.database import get_session
 from fastapi.responses import JSONResponse
 from src.utils import create_access_token
 from datetime import timedelta
-from .dependencies import AccessTokenBearer
+from .dependencies import *
 from sqlmodel import select
 from src.user_side.models import usertable
 from typing import List
@@ -28,14 +28,15 @@ logger = logging.getLogger(__name__)
 
 admin_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
-REFRESH_TOKEN_EXPIRY = 2  
+REFRESH_TOKEN_EXPIRY = 2
+
 
 @admin_router.post("/admin_login")
 async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depends(get_session)):
     username = login_data.username
     password = login_data.password
 
-    if username == 'Admin' and password == 'Admin':      
+    if username == 'Admin' and password == 'Admin':
         access_token = create_access_token(
             user_data={
                 'username': username,
@@ -97,7 +98,7 @@ async def create_policy(policy_data: PolicyCreateRequest, session: AsyncSession 
     try:
         result = await session.execute(select(policytable).where(policytable.policy_id == policy_data.policy_id))
         existing_policy = result.scalar()
-    
+
         new_policy = policytable(
             policy_id=policy_data.policy_id,
             policy_name=policy_data.policy_name,
@@ -131,7 +132,8 @@ async def create_policy(policy_data: PolicyCreateRequest, session: AsyncSession 
         raise HTTPException(status_code=422, detail=e.errors())
     except Exception as e:
         logger.error(f"Unexpected error: {e}")
-        raise HTTPException(status_code=500, detail="Policy with the given policy_id already exists.")
+        raise HTTPException(
+            status_code=500, detail="Policy with the given policy_id already exists.")
 
 
 @admin_router.get("/policy_list", response_model=list[dict])
@@ -151,3 +153,16 @@ async def policy_data(session: AsyncSession = Depends(get_session),
         content={"policy": policy_list}
     )
 
+
+@admin_router.get("/refresh_token")
+async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer())):
+    expiry_timestamp = token_details["exp"]
+
+    if datetime.fromtimestamp(expiry_timestamp) > datetime.now():
+        new_access_token = create_access_token(
+            user_data=token_details['user']
+        )
+
+        return JSONResponse(content={"access_token": new_access_token})
+    raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
+                        detail="Invalid or expired token")
