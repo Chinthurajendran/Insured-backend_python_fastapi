@@ -37,17 +37,41 @@ def create_access_token(user_data:dict,expiry:timedelta=None,refresh :bool= Fals
     )
     return token
 
-def decode_token(token:str):
+
+# from jwt.exceptions import ExpiredSignatureError, DecodeError
+# def decode_token(token:str):
+#     try:
+#         token_data = jwt.decode(
+#             jwt = token,
+#             key = Config.JWT_SECRET,
+#             algorithms = Config.JWT_ALOGRITHM
+#         )
+#         return token_data
+#     except ExpiredSignatureError:
+#         logging.exception("Signature has expired.")
+#         return None  # or handle token refresh logic here
+#     except jwt.PyJWTError as e:
+#         logging.exception(e)
+#         return None
+
+
+from jwt.exceptions import ExpiredSignatureError, DecodeError
+
+def decode_token(token: str):
     try:
         token_data = jwt.decode(
-            jwt = token,
-            key = Config.JWT_SECRET,
-            algorithms = Config.JWT_ALOGRITHM
+            token,  # corrected parameter name
+            key=Config.JWT_SECRET,
+            algorithms=[Config.JWT_ALOGRITHM]  # corrected to list
         )
         return token_data
+    except ExpiredSignatureError:
+        logging.exception("Signature has expired.")
+        return None  # or handle token refresh logic here
     except jwt.PyJWTError as e:
         logging.exception(e)
-        return None
+        return None  # corrected typo
+
     
 
 UPLOAD_DIR = Path("D:/BROTOTYPE BOX/TASK/Week 23 1.0/Project 5.0/frontend/src/assets/uploads")

@@ -1,8 +1,8 @@
-"""init
+"""update agent table
 
-Revision ID: 20c112e5a48b
-Revises: 8518409bd32d
-Create Date: 2025-02-15 11:46:34.044565
+Revision ID: c6a148d7931b
+Revises: 2501c0bd060a
+Create Date: 2025-02-17 12:10:22.967997
 
 """
 from typing import Sequence, Union
@@ -13,8 +13,8 @@ import sqlmodel
 from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
-revision: str = '20c112e5a48b'
-down_revision: Union[str, None] = '8518409bd32d'
+revision: str = 'c6a148d7931b'
+down_revision: Union[str, None] = '2501c0bd060a'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -47,9 +47,9 @@ def downgrade() -> None:
     sa.Column('busy_status', sa.BOOLEAN(), autoincrement=False, nullable=True),
     sa.Column('approval_status', postgresql.ENUM('approved', 'processing', 'rejected', name='approvalstatus'), autoincrement=False, nullable=True),
     sa.Column('is_agent', sa.BOOLEAN(), autoincrement=False, nullable=True),
+    sa.Column('role', sa.VARCHAR(length=20), autoincrement=False, nullable=False),
     sa.Column('create_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
     sa.Column('update_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
-    sa.Column('title', sa.VARCHAR(), autoincrement=False, nullable=True),
     sa.PrimaryKeyConstraint('agent_id', name='agenttable_pkey'),
     sa.UniqueConstraint('agent_name', name='agenttable_agent_name_key')
     )
@@ -70,6 +70,7 @@ def downgrade() -> None:
     sa.Column('age_group', sa.VARCHAR(), autoincrement=False, nullable=False),
     sa.Column('income_range', sa.VARCHAR(), autoincrement=False, nullable=False),
     sa.Column('description', sa.VARCHAR(), autoincrement=False, nullable=True),
+    sa.Column('role', sa.VARCHAR(length=20), autoincrement=False, nullable=True),
     sa.Column('create_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
     sa.Column('update_at', postgresql.TIMESTAMP(), autoincrement=False, nullable=True),
     sa.PrimaryKeyConstraint('policy_uid', name='policytable_pkey'),

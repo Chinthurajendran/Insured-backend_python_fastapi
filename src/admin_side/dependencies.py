@@ -14,6 +14,7 @@ class TokenBearer(HTTPBearer):
     async def __call__(self, request: Request) -> Optional[HTTPAuthorizationCredentials]:
         creds = await super().__call__(request)
         token = creds.credentials
+        
         token_data = decode_token(token)
 
         if not self.token_valid(token):
@@ -23,6 +24,7 @@ class TokenBearer(HTTPBearer):
             ) 
         
         self.verify_token_data(token_data)
+        self.check_admin_role(token_data)
 
         return token_data
 
@@ -32,6 +34,17 @@ class TokenBearer(HTTPBearer):
     
     def verify_token_data(self, token_data):
         raise NotImplementedError("Please Override this method in child classes")
+    
+    def check_admin_role(self, token_data: dict):
+
+        user_data = token_data.get("user", {})
+        user_role = user_data.get("admin_role")
+
+        if user_role != "admin":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied! Only admins are allowed."
+            )
 
 
 class AccessTokenBearer(TokenBearer):

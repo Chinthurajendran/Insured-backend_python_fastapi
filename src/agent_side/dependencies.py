@@ -23,6 +23,7 @@ class TokenBearer(HTTPBearer):
             )
 
         self.verify_token_data(token_data)
+        self.check_agent_role(token_data)
 
         return token_data
 
@@ -34,6 +35,15 @@ class TokenBearer(HTTPBearer):
         raise NotImplementedError(
             "Please Override this method in child classes")
 
+    def check_agent_role(self, token_data: dict):
+        user_data = token_data.get("user", {})
+        agent_role = user_data.get("agent_role")
+
+        if agent_role != "agent":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied! Only user are allowed."
+            )
 
 class AccessTokenBearer(TokenBearer):
     def verify_token_data(self, token_data: dict):

@@ -93,7 +93,8 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
                     'agent_email': user.agent_email,
                     'agnet_id': str(user.agent_id),
                     'agent_name': str(user.agent_name),
-                    'agent_userid': str(user.agent_userid)
+                    'agent_userid': str(user.agent_userid),
+                    'agent_role' :str(user.role)
                 }
             )
 
@@ -102,7 +103,8 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
                     'agent_email': user.agent_email,
                     'agnet_id': str(user.agent_id),
                     'agent_name': str(user.agent_name),
-                    'agent_userid': str(user.agent_userid)
+                    'agent_userid': str(user.agent_userid),
+                    'agent_role' :str(user.role)
                 },
                 refresh=True,
                 expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
@@ -116,7 +118,8 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
                     'agent_email': user.agent_email,
                     'agnet_id': str(user.agent_id),
                     'agent_name': str(user.agent_name),
-                    'agent_userid': str(user.agent_userid)
+                    'agent_userid': str(user.agent_userid),
+                    'agent_role' :str(user.role)
                 }
             )
 

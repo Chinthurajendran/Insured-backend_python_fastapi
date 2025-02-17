@@ -51,14 +51,16 @@ async def login_user(login_data:UserLoginModel,session:AsyncSession = Depends(ge
             user_access_token = create_access_token(
                 user_data={
                     'email':user.email,
-                    'user_id':str(user.user_id)
+                    'user_id':str(user.user_id),
+                    'user_role' :str(user.role)
                 }
             )
 
             user_refresh_token = create_access_token(
                 user_data={
                     'user_email':user.email,
-                    'user_id':str(user.user_id)
+                    'user_id':str(user.user_id),
+                    'user_role' :str(user.role)
                 },
                 refresh=True,
                 expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
@@ -70,7 +72,8 @@ async def login_user(login_data:UserLoginModel,session:AsyncSession = Depends(ge
                     "user_access_token":user_access_token,
                     "user_refresh_token":user_refresh_token,
                     "user_id":str(user.user_id),
-                    "user_name":str(user.username)
+                    "user_name":str(user.username),
+                    'user_role' :str(user.role)
                 }
             )
     raise HTTPException(
@@ -79,7 +82,7 @@ async def login_user(login_data:UserLoginModel,session:AsyncSession = Depends(ge
     )
 
 
-@auth_router.get("/refresh_token")
+@auth_router.get("/user_refresh_token")
 async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer())):
     expiry_timestamp = token_details["exp"]
     if datetime.fromtimestamp(expiry_timestamp) > datetime.now():

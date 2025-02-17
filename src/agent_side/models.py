@@ -30,10 +30,10 @@ class AgentTable(SQLModel, table=True):
     agent_email: str = Field(default=None, nullable=True)
     rejection_reason : str = Field(default=None, nullable=True)
     password: str = Field(default=None, nullable=True)
-    gender: str = Field(default="Male", nullable=True)
-    phone: str = Field(default="7034345848", nullable=True)
-    date_of_birth: date = Field(default=date(1997, 12, 15), nullable=True)
-    city: str = Field(default="Kochi", max_length=100, nullable=True)
+    gender: str = Field(nullable=True)
+    phone: str = Field(nullable=True)
+    date_of_birth: date = Field(nullable=True)
+    city: str = Field(max_length=100,nullable=True)
     latitude: float = Field(default=0.0, nullable=True)
     longitude: float = Field(default=0.0, nullable=True)
     agent_login_status: bool = Field(default=False, nullable=True)
@@ -42,6 +42,7 @@ class AgentTable(SQLModel, table=True):
         sa_column=Column(Enum(ApprovalStatus), default=ApprovalStatus.processing)
     )
     is_agent: bool = Field(default=False, nullable=True)
+    role: str = Field(default="agent", max_length=20,nullable=False)
     create_at: datetime = Field(sa_column=Column(
         pg.TIMESTAMP, default=datetime.utcnow))
     update_at: datetime = Field(sa_column=Column(

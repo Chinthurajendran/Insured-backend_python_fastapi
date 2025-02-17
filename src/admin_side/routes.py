@@ -44,12 +44,14 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
         admin_access_token = create_access_token(
             user_data={
                 'admin_username': username,
+                'admin_role' :'admin'
             }
         )
 
         admin_refresh_token = create_access_token(
             user_data={
                 'admin_username': username,
+                'admin_role' :'admin'
             },
             refresh=True,
             expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
@@ -60,7 +62,8 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
                 "message": "Login successful",
                 "admin_access_token": admin_access_token,
                 "admin_refresh_token": admin_refresh_token,
-                "admin_username": username
+                "admin_username": username,
+                'admin_role' :'admin'
             }
         )
     raise HTTPException(
@@ -73,7 +76,7 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
 async def user_list(session: AsyncSession = Depends(get_session),
                     user_details=Depends(access_token_bearer)):
 
-    result = await session.execute(select(usertable))
+    result = await session.execute(select(usertable).where(usertable.role == 'user' ))
     users = result.scalars().all()
 
     users_dict = []
@@ -158,16 +161,16 @@ async def policy_data(session: AsyncSession = Depends(get_session),
     )
 
 
-@admin_router.get("/refresh_token")
+@admin_router.get("/admin_refresh_token")
 async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer())):
     expiry_timestamp = token_details["exp"]
-
+    print('qqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqqq')
     if datetime.fromtimestamp(expiry_timestamp) > datetime.now():
         new_access_token = create_access_token(
             user_data=token_details['user']
         )
 
-        return JSONResponse(content={"access_token": new_access_token})
+        return JSONResponse(content={"admin_access_token": new_access_token})
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Invalid or expired token")
 
@@ -226,7 +229,8 @@ async def agent_approval_and_rejection(agentId: UUID, session: AsyncSession = De
 
 
 @admin_router.put("/agent_approved/{agentId}", response_model=dict)
-async def agent_approval(agentId: UUID, session: AsyncSession = Depends(get_session), user_details=Depends(access_token_bearer)):
+async def agent_approval(agentId: UUID, session: AsyncSession = Depends(get_session), 
+                         user_details=Depends(access_token_bearer)):
     logging.info(f"Attempting to approve agent with ID: {agentId}")
     logging.info(f"User details: {user_details}")
 
@@ -264,8 +268,9 @@ async def agent_approval(agentId: UUID, session: AsyncSession = Depends(get_sess
 
 
 @admin_router.put("/agent_rejected/{agentId}", response_model=dict)
-async def agent_rejected(agentId: UUID, reason: str = Form(...), session: AsyncSession = Depends(get_session), agent_details=Depends(access_token_bearer)):
-
+async def agent_rejected(agentId: UUID, reason: str = Form(...), 
+                         session: AsyncSession = Depends(get_session), 
+                         agent_details=Depends(access_token_bearer)):
     result = await session.execute(select(AgentTable).where(AgentTable.agent_id == agentId))
     agent = result.scalars().first()
 
@@ -304,7 +309,8 @@ async def agent_rejected(agentId: UUID, reason: str = Form(...), session: AsyncS
 
 
 @admin_router.get("/agent_list", response_model=list[dict])
-async def agent_approved_list(session: AsyncSession = Depends(get_session), user_details=Depends(access_token_bearer)):
+async def agent_approved_list(session: AsyncSession = Depends(get_session), 
+                              user_details=Depends(access_token_bearer)):
 
     result = await session.execute(select(AgentTable.agent_name, AgentTable.agent_email,AgentTable.agent_userid,
                                           AgentTable.phone, AgentTable.gender,
@@ -335,3 +341,33 @@ async def agent_approved_list(session: AsyncSession = Depends(get_session), user
         })
 
     return JSONResponse(status_code=200, content={"agents": agent_data})
+
+
+@admin_router.put("/user_block/{userId}",response_model=dict)
+async def block_user(userId:UUID,
+                     session:AsyncSession = Depends(get_session),
+                     user_details = Depends(access_token_bearer)):
+    result = await session.execute(select(usertable).where(usertable.user_id == userId))
+    user = result.scalar()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.block_status = not user.block_status
+    await session.commit()
+    return JSONResponse(status_code=200, content={"message": "Updated."})
+
+
+@admin_router.put("/user_delete/{userId}",response_model=dict)
+async def block_user(userId:UUID,
+                     session:AsyncSession = Depends(get_session),
+                     user_details = Depends(access_token_bearer)):
+    result = await session.execute(select(usertable).where(usertable.user_id == userId))
+    user = result.scalar()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    user.delete_status = not user.delete_status
+    await session.commit()
+    return JSONResponse(status_code=200, content={"message": "Updated."})
+
+    

@@ -15,7 +15,6 @@ class TokenBearer(HTTPBearer):
         creds = await super().__call__(request)
         token = creds.credentials
         token_data = decode_token(token)
-
         if not self.token_valid(token):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -23,6 +22,7 @@ class TokenBearer(HTTPBearer):
             )
 
         self.verify_token_data(token_data)
+        self.check_user_role(token_data)
 
         return token_data
 
@@ -33,6 +33,16 @@ class TokenBearer(HTTPBearer):
     def verify_token_data(self, token_data):
         raise NotImplementedError(
             "Please Override this method in child classes")
+    
+    def check_user_role(self, token_data: dict):
+        user_data = token_data.get("user", {})
+        user_role = user_data.get("user_role")
+
+        if user_role != "user":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Access denied! Only user are allowed."
+            )
 
 
 class AccessTokenBearer(TokenBearer):

@@ -33,6 +33,7 @@ class policytable(SQLModel, table=True):
     income_range: str = Field(nullable=False)
 
     description: str = Field(default="", nullable=True)
+    role: str = Field(default="admin", max_length=20,nullable=True)
 
     create_at: datetime = Field(sa_column=Column(
         pg.TIMESTAMP, default=datetime.utcnow))
