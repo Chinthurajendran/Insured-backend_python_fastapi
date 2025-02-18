@@ -38,6 +38,7 @@ class AgentTable(SQLModel, table=True):
     longitude: float = Field(default=0.0, nullable=True)
     agent_login_status: bool = Field(default=False, nullable=True)
     busy_status: bool = Field(default=False, nullable=True)
+    block_status: bool = Field(default=False)
     approval_status: ApprovalStatus = Field(
         sa_column=Column(Enum(ApprovalStatus), default=ApprovalStatus.processing)
     )

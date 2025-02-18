@@ -154,7 +154,7 @@ async def logout_agent(
 
 
 
-@agent_router.get("/refresh_token")
+@agent_router.post("/refresh_token")
 async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer())):
     expiry_timestamp = token_details["exp"]
     if datetime.fromtimestamp(expiry_timestamp) > datetime.now():

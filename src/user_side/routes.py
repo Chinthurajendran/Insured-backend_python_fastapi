@@ -8,10 +8,15 @@ from fastapi.responses import JSONResponse
 from src.utils import create_access_token,decode_token,verify_password
 from datetime import timedelta
 from .dependencies import*
+from .models import*
+from sqlmodel import select
+from uuid import UUID
+from .dependencies import *
 
 
 auth_router = APIRouter()
 user_service = UserService()
+access_token_bearer = AccessTokenBearer()
 REFRESH_TOKEN_EXPIRY = 2
 
 @auth_router.post("/signup",response_model = UserModel,status_code= status.HTTP_201_CREATED )
@@ -43,6 +48,9 @@ async def login_user(login_data:UserLoginModel,session:AsyncSession = Depends(ge
     password = login_data.password
 
     user = await user_service.get_user_by_email(email,session)
+
+    if user.block_status: 
+        raise HTTPException(status_code=404, detail="User is blocked")
 
     if user is not None:
         password_vaild = verify_password(password,user.password)
@@ -93,3 +101,19 @@ async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer(
         return JSONResponse(content={"access_token": new_access_token})
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Invalid or expired token")
+
+@auth_router.put("/user_logout/{user_id}")
+async def logout_agent(
+    user_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user_details=Depends(access_token_bearer),
+):
+    result = await session.execute(select(usertable).where(usertable.user_id == user_id))
+    user = result.scalars().first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    await session.commit()
+    
+    return JSONResponse(status_code=200, content={"message": "User logged out successfully."})
