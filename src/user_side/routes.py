@@ -12,12 +12,18 @@ from .models import*
 from sqlmodel import select
 from uuid import UUID
 from .dependencies import *
+from google.oauth2 import id_token
+from google.auth.transport import requests
+from jose import JWTError
+import requests
 
 
 auth_router = APIRouter()
 user_service = UserService()
 access_token_bearer = AccessTokenBearer()
 REFRESH_TOKEN_EXPIRY = 2
+GOOGLE_CLIENT_ID = "270374642053-gvj2j07247e2h96gbd929oh12li1rs2l.apps.googleusercontent.com"
+
 
 @auth_router.post("/signup",response_model = UserModel,status_code= status.HTTP_201_CREATED )
 async def create_user_account(user_data:UserCreate,session:AsyncSession = Depends(get_session)):
@@ -88,6 +94,80 @@ async def login_user(login_data:UserLoginModel,session:AsyncSession = Depends(ge
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Invalid Email  or Password"
     )
+
+
+
+
+def verify_google_token(token: str):
+    # Send request to Google to verify the token
+    response = requests.get(f'https://oauth2.googleapis.com/tokeninfo?id_token={token}')
+
+    if response.status_code != 200:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
+    
+    token_info = response.json()
+    print(token_info['aud'])
+
+    if token_info['aud'] != GOOGLE_CLIENT_ID:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Token's audience doesn't match")
+    return token_info
+
+
+@auth_router.post("/google-login")
+async def google_login(auth_data: GoogleAuthModel, session: AsyncSession = Depends(get_session)):
+    try:
+
+        idinfo = verify_google_token(auth_data.token)
+        
+        if "email" not in idinfo:
+            raise HTTPException(status_code=400, detail="Invalid Google token")
+
+        email = idinfo["email"]
+        user = await user_service.get_user_by_email(email, session)
+
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found, please register")
+
+        if user.block_status:
+            raise HTTPException(status_code=403, detail="User is blocked")
+
+        user_access_token = create_access_token(
+            user_data={
+                "email": user.email,
+                "user_id": str(user.user_id),
+                "user_role": str(user.role),
+            }
+        )
+
+        user_refresh_token = create_access_token(
+            user_data={
+                "user_email": user.email,
+                "user_id": str(user.user_id),
+                "user_role": str(user.role),
+            },
+            refresh=True,
+            expiry=timedelta(days=REFRESH_TOKEN_EXPIRY),
+        )
+
+        return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "message": "Login successful",
+                "user_access_token": user_access_token.decode() if isinstance(user_access_token, bytes) else user_access_token,
+                "user_refresh_token": user_refresh_token.decode() if isinstance(user_refresh_token, bytes) else user_refresh_token,
+                "user_id": str(user.user_id),
+                "user_name": str(user.username),
+                "user_role": str(user.role),
+            },
+        )
+
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid Google token")
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Could not validate credentials")
+    except Exception as e:
+        print('Exception:', e)
+        raise HTTPException(status_code=500, detail="Internal server error")
 
 
 @auth_router.get("/user_refresh_token")

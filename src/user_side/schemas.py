@@ -21,3 +21,7 @@ class UserModel(BaseModel):
 class UserLoginModel(BaseModel):
     email: str
     password:str
+
+
+class GoogleAuthModel(BaseModel):
+    token: str

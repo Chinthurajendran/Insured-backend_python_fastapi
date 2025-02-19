@@ -76,7 +76,12 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
 async def user_list(session: AsyncSession = Depends(get_session),
                     user_details=Depends(access_token_bearer)):
 
-    result = await session.execute(select(usertable).where(usertable.role == 'user'))
+    result = await session.execute(select(usertable).where(
+        and_(
+            usertable.role == 'user',
+            usertable.delete_status == False
+        )
+    ))
     users = result.scalars().all()
 
     users_dict = []
@@ -103,7 +108,8 @@ async def create_policy(policy_data: PolicyCreateRequest, session: AsyncSession 
     logger.info(f"Received request data: {policy_data}")
 
     try:
-        result = await session.execute(select(policytable).where(policytable.policy_id == policy_data.policy_id))
+        result = await session.execute(select(policytable).
+                                       where(policytable.policy_id == policy_data.policy_id))
         existing_policy = result.scalar()
 
         new_policy = policytable(
@@ -143,7 +149,6 @@ async def create_policy(policy_data: PolicyCreateRequest, session: AsyncSession 
             status_code=500, detail="Policy with the given policy_id already exists.")
 
 
-
 @admin_router.get("/policy_list", response_model=List[dict])
 async def policy_data(session: AsyncSession = Depends(get_session),
                       policy_details=Depends(access_token_bearer)):
@@ -165,7 +170,7 @@ async def policy_data(session: AsyncSession = Depends(get_session),
         policytable.age_group,
         policytable.description,
         policytable.income_range,
-    ))
+    ).where(policytable.delete_status == False))
     policies = result.all()
     policy_list = []
     for row in policies:
@@ -194,6 +199,7 @@ async def policy_data(session: AsyncSession = Depends(get_session),
         content={"policy": policy_list}
     )
 
+
 @admin_router.post("/admin_refresh_token")
 async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer())):
     expiry_timestamp = token_details["exp"]
@@ -216,7 +222,7 @@ async def agent_management(
         select(
             AgentTable.agent_id, AgentTable.agent_name,
             AgentTable.agent_email, AgentTable.approval_status
-        ).where(AgentTable.approval_status == "processing")
+        ).where(AgentTable.approval_status == "processing",)
     )
 
     agents = result.all()
@@ -334,25 +340,35 @@ async def agent_rejected(agentId: UUID, reason: str = Form(...),
     return JSONResponse(status_code=200, content={"message": "Updated."})
 
 
-@admin_router.get("/agent_list", response_model=list[dict])
+@admin_router.get("/agent_list", response_model=List[dict])
 async def agent_approved_list(session: AsyncSession = Depends(get_session),
                               user_details=Depends(access_token_bearer)):
 
-    result = await session.execute(select(AgentTable.agent_name, AgentTable.agent_email, AgentTable.agent_userid,
-                                          AgentTable.agent_id,
-                                          AgentTable.role,
-                                          AgentTable.block_status,
-                                          AgentTable.phone, AgentTable.gender,
-                                          AgentTable.date_of_birth,
-                                          AgentTable.agent_profile,
-                                          AgentTable.agent_login_status, AgentTable.city).where(AgentTable.approval_status == 'approved'))
+    result = await session.execute(select(
+        AgentTable.agent_name, 
+        AgentTable.agent_email, 
+        AgentTable.agent_userid,
+        AgentTable.agent_id,
+        AgentTable.role,
+        AgentTable.block_status,
+        AgentTable.phone, 
+        AgentTable.gender,
+        AgentTable.date_of_birth,
+        AgentTable.agent_profile,
+        AgentTable.agent_login_status, 
+        AgentTable.city
+    ).where(and_(
+        AgentTable.approval_status == 'approved',
+        AgentTable.delete_status == False
+    )))
+    
     agents = result.all()
     if not agents:
         return JSONResponse(status_code=404, content={"message": "Agent not found"})
 
     agent_data = []
     for row in agents:
-        if len(row) < 11:
+        if len(row) < 12:  # Updated the length check to 12
             print(f"Row length is less than expected: {row}")
             continue
 
@@ -372,6 +388,7 @@ async def agent_approved_list(session: AsyncSession = Depends(get_session),
         })
 
     return JSONResponse(status_code=200, content={"agents": agent_data})
+
 
 
 @admin_router.put("/user_block/{userId}", response_model=dict)
@@ -402,7 +419,6 @@ async def block_user(userId: UUID,
     return JSONResponse(status_code=200, content={"message": "Updated."})
 
 
-
 @admin_router.put("/Policy_block/{userId}", response_model=dict)
 async def block_user(userId: UUID,
                      session: AsyncSession = Depends(get_session),
@@ -426,6 +442,34 @@ async def block_user(userId: UUID,
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
 
-    user.delete_status = not user.delete_status
+    user.delete_status = True
+    await session.commit()
+    return JSONResponse(status_code=200, content={"message": "Updated."})
+
+
+@admin_router.put("/policy_delete/{userId}", response_model=dict)
+async def block_user(userId: UUID,
+                     session: AsyncSession = Depends(get_session),
+                     user_details=Depends(access_token_bearer)):
+    result = await session.execute(select(policytable).where(policytable.policy_uid == userId))
+    policy = result.scalar()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found")
+
+    policy.delete_status = True
+    await session.commit()
+    return JSONResponse(status_code=200, content={"message": "Updated."})
+
+
+@admin_router.put("/agent_delete/{userId}", response_model=dict)
+async def block_user(userId: UUID,
+                     session: AsyncSession = Depends(get_session),
+                     user_details=Depends(access_token_bearer)):
+    result = await session.execute(select(AgentTable).where(AgentTable.agent_id == userId))
+    policy = result.scalar()
+    if not policy:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    policy.delete_status = True
     await session.commit()
     return JSONResponse(status_code=200, content={"message": "Updated."})
