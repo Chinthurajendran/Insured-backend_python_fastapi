@@ -39,5 +39,15 @@ from pathlib import Path
 
 
 
-app.mount("/uploads", StaticFiles(directory="D:/BROTOTYPE BOX/TASK/Week 23 1.0/Project 5.0/frontend/src/assets/uploads"), name="uploads")
+# app.mount("/uploads", StaticFiles(directory="D:/BROTOTYPE BOX/TASK/Week 23 1.0/Project 5.0/frontend/src/assets/uploads"), name="uploads")
+import os
+
+# Define a relative path for uploads
+UPLOAD_DIR = os.path.join(os.getcwd(), "uploads")
+
+# Ensure the directory exists
+os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Mount the static folder
+app.mount("/uploads", StaticFiles(directory=UPLOAD_DIR), name="uploads")
 

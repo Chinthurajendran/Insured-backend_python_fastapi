@@ -1,6 +1,6 @@
 from pydantic import BaseModel,EmailStr,Field
 import uuid
-from datetime import datetime
+from datetime import datetime,date
 
 
 class UserCreate(BaseModel):
@@ -25,3 +25,13 @@ class UserLoginModel(BaseModel):
 
 class GoogleAuthModel(BaseModel):
     token: str
+
+class ProfileCreateRequest(BaseModel):
+    username: str
+    email: str
+    phone: str
+    marital_status: str
+    gender: str
+    city: str
+    date_of_birth: date  
+    annual_income: str

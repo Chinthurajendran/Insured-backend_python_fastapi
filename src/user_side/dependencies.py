@@ -4,6 +4,7 @@ from fastapi.security.http import HTTPAuthorizationCredentials
 from src.utils import decode_token
 from fastapi.exceptions import HTTPException
 from typing import Optional
+import jwt
 
 
 class TokenBearer(HTTPBearer):
@@ -14,12 +15,14 @@ class TokenBearer(HTTPBearer):
     async def __call__(self, request: Request) -> Optional[HTTPAuthorizationCredentials]:
         creds = await super().__call__(request)
         token = creds.credentials
+
         token_data = decode_token(token)
+        
         if not self.token_valid(token):
             raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
+                status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or  expired token"
-            )
+            ) 
 
         self.verify_token_data(token_data)
         self.check_user_role(token_data)
@@ -43,7 +46,14 @@ class TokenBearer(HTTPBearer):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied! Only user are allowed."
             )
-
+    
+    # def decode_token(token: str):
+    #         try:
+    #             return jwt.decode(token, 'your_secret_key', algorithms=['HS256'])
+    #         except jwt.ExpiredSignatureError:
+    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token has expired")
+    #         except jwt.InvalidTokenError:
+    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token")
 
 class AccessTokenBearer(TokenBearer):
     def verify_token_data(self, token_data: dict):

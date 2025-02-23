@@ -62,7 +62,7 @@ async def agent_signup(username: str = Form(...),
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(e))
-    
+
 
 @agent_router.post("/agent_login")
 async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession = Depends(get_session)) -> JSONResponse:
@@ -84,9 +84,8 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
             agent.latitude = latitude
             agent.longitude = longitude
 
-            await session.commit()  # Commit only if password is valid
-
-
+            await session.commit()
+            
         if password_valid:
             agent_access_token = create_access_token(
                 user_data={
@@ -94,7 +93,7 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
                     'agnet_id': str(user.agent_id),
                     'agent_name': str(user.agent_name),
                     'agent_userid': str(user.agent_userid),
-                    'agent_role' :str(user.role)
+                    'agent_role': str(user.role)
                 }
             )
 
@@ -104,11 +103,17 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
                     'agnet_id': str(user.agent_id),
                     'agent_name': str(user.agent_name),
                     'agent_userid': str(user.agent_userid),
-                    'agent_role' :str(user.role)
+                    'agent_role': str(user.role)
                 },
                 refresh=True,
                 expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
             )
+
+            if isinstance(agent_access_token, bytes):
+                agent_access_token = agent_access_token.decode("utf-8")
+            if isinstance(agent_refresh_token, bytes):
+                agent_refresh_token = agent_refresh_token.decode("utf-8")
+
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
                 content={
@@ -119,7 +124,7 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
                     'agnet_id': str(user.agent_id),
                     'agent_name': str(user.agent_name),
                     'agent_userid': str(user.agent_userid),
-                    'agent_role' :str(user.role)
+                    'agent_role': str(user.role)
                 }
             )
 
@@ -149,9 +154,8 @@ async def logout_agent(
 
     agent.agent_login_status = False
     await session.commit()
-    
-    return JSONResponse(status_code=200, content={"message": "Agent logged out successfully."})
 
+    return JSONResponse(status_code=200, content={"message": "Agent logged out successfully."})
 
 
 @agent_router.post("/refresh_token")

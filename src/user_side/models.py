@@ -20,7 +20,7 @@ class usertable(SQLModel, table=True):
     gender: str = Field(nullable=True)
     phone: str = Field(nullable=True)
     date_of_birth: date = Field(nullable=True)
-    annual_income: int = Field(nullable=True)
+    annual_income: str = Field(nullable=True)
     marital_status: str = Field(nullable=True)
     city: str = Field(max_length=100,nullable=True)
     latitude: float = Field(default=0.0)

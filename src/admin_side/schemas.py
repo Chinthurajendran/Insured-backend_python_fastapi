@@ -43,3 +43,21 @@ class PolicyCreateRequest(BaseModel):
     age_group: str
     income_range: str
     description: str = ""
+
+
+class PolicyediteRequest(BaseModel):
+    policy_id: str
+    policy_name: str
+    policy_type: str
+    id_proof: bool = False
+    passbook: bool = False
+    photo: bool = False
+    pan_card: bool = False
+    income_proof: bool = False
+    nominee_address_proof: bool = False
+    coverage: str
+    settlement: str
+    premium_amount: str
+    age_group: str
+    income_range: str
+    description: str = ""

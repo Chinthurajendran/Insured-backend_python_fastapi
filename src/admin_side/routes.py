@@ -56,6 +56,13 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
             refresh=True,
             expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
         )
+
+
+        if isinstance(admin_access_token, bytes):
+            admin_access_token = admin_access_token.decode("utf-8")
+        if isinstance(admin_refresh_token, bytes):
+            admin_refresh_token = admin_refresh_token.decode("utf-8")
+
         return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
@@ -66,11 +73,11 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
                 'admin_role': 'admin'
             }
         )
+
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Invalid Email or Password"
     )
-
 
 @admin_router.get("/user_date", response_model=list[dict])
 async def user_list(session: AsyncSession = Depends(get_session),
@@ -198,6 +205,102 @@ async def policy_data(session: AsyncSession = Depends(get_session),
         status_code=200,
         content={"policy": policy_list}
     )
+
+@admin_router.get("/policy_edit_list/{policyId}", response_model=List[dict])
+async def policy_data(policyId: UUID,session: AsyncSession = Depends(get_session),
+                      policy_details=Depends(access_token_bearer)):
+    result = await session.execute(select(
+        policytable.policy_id,
+        policytable.policy_name,
+        policytable.policy_type,
+        policytable.block_status,
+        policytable.role,
+        policytable.policy_uid,
+        policytable.id_proof,
+        policytable.passbook,
+        policytable.photo,
+        policytable.pan_card,
+        policytable.income_proof,
+        policytable.nominee_address_proof,
+        policytable.coverage,
+        policytable.settlement,
+        policytable.premium_amount,
+        policytable.age_group,
+        policytable.description,
+        policytable.income_range,
+    ).where(policytable.policy_uid == policyId))
+    policies = result.all()
+    policy_list = []
+    for row in policies:
+        policy_list.append({
+            "policy_id": row[0],
+            "policy_name": row[1],
+            "policy_type": row[2],
+            "block_status": row[3],
+            "role": row[4],
+            "policy_uid": str(row[5]),
+            "id_proof": row[6],
+            "passbook": row[7],
+            "photo": row[8],
+            "pan_card": row[9],
+            "income_proof": row[10],
+            "nominee_address_proof": row[11],
+            "coverage": row[12],
+            "settlement": row[13],
+            "premium_amount": row[14],
+            "age_group": row[15],
+            "description": row[16],
+            "income_range": row[17],
+        })
+
+    return JSONResponse(
+        status_code=200,
+        content={"policy": policy_list}
+    )
+
+
+@admin_router.put("/policy_edit/{policyId}", response_model=dict)
+async def edit_policy(policyId: UUID, policy_data: PolicyediteRequest, session: AsyncSession = Depends(get_session)):
+
+
+    try:
+        result = await session.execute(select(policytable).
+                                       where(policytable.policy_uid == policyId))
+        policys = result.scalars().first()
+
+        if not policys:
+            raise HTTPException(status_code=404, detail="Policy not found")
+        
+
+        policys.policy_id = policy_data.policy_id
+        policys.policy_name = policy_data.policy_name
+        policys.policy_type = policy_data.policy_type
+        policys.id_proof = policy_data.id_proof
+        policys.passbook = policy_data.passbook
+        policys.photo = policy_data.photo
+        policys.pan_card = policy_data.pan_card
+        policys.income_proof = policy_data.income_proof
+        policys.nominee_address_proof = policy_data.nominee_address_proof
+        policys.coverage = policy_data.coverage
+        policys.settlement = policy_data.settlement
+        policys.premium_amount = policy_data.premium_amount
+        policys.age_group = policy_data.age_group
+        policys.income_range = policy_data.income_range
+        policys.description = policy_data.description
+
+        await session.commit()
+
+        return JSONResponse(
+            status_code=200,
+            content={"message": "Policy updated successfully!"}
+        )
+    except ValidationError as e:
+        logger.error(f"Validation error: {e}")
+        raise HTTPException(status_code=422, detail=e.errors())
+    except Exception as e:
+        logger.error(f"Unexpected error: {e}")
+        raise HTTPException(
+            status_code=500, detail="Internal server error")
 
 
 @admin_router.post("/admin_refresh_token")

@@ -35,7 +35,9 @@ class AgentService:
         async with aiofiles.open(file_path, "wb") as buffer:
             content = await id_proof.read()
             await buffer.write(content)
-        
+
+        file_url = f"http://127.0.0.1:8000/uploads/{id_proof.filename}"
+
         code = random_code()
 
         new_agent = AgentTable(
@@ -47,7 +49,7 @@ class AgentService:
             city=agent_data_dict["city"],
             agent_userid = f"AG{code}",
             password=generate_passwd_hash(agent_data_dict["password"]),
-            agent_idproof=str(file_path),
+            agent_idproof= str (file_url),
             create_at=create_at,
             update_at=update_at
         )
@@ -59,52 +61,6 @@ class AgentService:
         logger.info(f"New user created: {new_agent.agent_name}")
 
         return new_agent
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-    # async def create_user(self,agent_details:AgentCreate,
-    #                       id_proof:UploadFile = File(...),
-    #                       session:AsyncSession):
-    
-    #     agent_data_dict = agent_details.model_dump()
-    #     create_at = datetime.utcnow()
-    #     update_at = datetime.utcnow()
-
-    #     # Save uploaded file
-    #     file_path = f"{UPLOAD_DIR}/{id_proof.filename}"
-    #     with open(file_path, "wb") as buffer:
-    #         shutil.copyfileobj(id_proof.file, buffer)
-
-    #     new_agent = AgentTable(
-    #         **agent_data_dict,
-    #         id_proof=file_path,
-    #         create_at=create_at,
-    #         update_at=update_at
-    #     )
-
-    #     new_agent.password = generate_passwd_hash(agent_data_dict['password'])
-
-    #     session.add(new_agent)
-    #     await session.commit()
-    #     await session.refresh(new_agent)
-
-    #     logger.info(f"New user created: {new_agent.username}")
-
-    #     return new_agent
 
 
 

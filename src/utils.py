@@ -58,7 +58,6 @@ def create_access_token(user_data:dict,expiry:timedelta=None,refresh :bool= Fals
 from jwt.exceptions import ExpiredSignatureError, DecodeError
 
 def decode_token(token: str):
-    print('eeeeeeeee',token)
     try:
         token_data = jwt.decode(
             token,  # corrected parameter name
