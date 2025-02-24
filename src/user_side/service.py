@@ -9,8 +9,25 @@ import logging
 import aiofiles
 from uuid import UUID
 import traceback
+from dotenv import load_dotenv
+import os
+import boto3
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_REGION = os.getenv('AWS_REGION')
+
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=AWS_REGION
+)
 
 class UserService:
     async def get_user_by_id(self,user_id:str,session:AsyncSession):
@@ -71,13 +88,12 @@ class UserService:
 
     async def profile_update(self, user_data: ProfileCreateRequest, user_Id, image: UploadFile, session: AsyncSession):
         try:
-            print("zzzzzzzzzzzzzzz",image)
-            file_path = UPLOAD_DIR / image.filename
-            async with aiofiles.open(file_path, "wb") as buffer:
-                content = await image.read()
-                await buffer.write(content)
+            folder_name = "Users/"
 
-            file_url = f"http://127.0.0.1:8000/uploads/{image.filename}"
+            file_path = f"{folder_name}{image.filename}"
+
+            s3_client.upload_fileobj(image.file, BUCKET_NAME, file_path)
+            file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
 
             result = await session.execute(select(usertable).where(usertable.user_id == user_Id))
             user = result.scalars().first()

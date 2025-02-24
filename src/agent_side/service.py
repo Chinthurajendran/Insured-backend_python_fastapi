@@ -7,8 +7,26 @@ from src.utils import generate_passwd_hash,UPLOAD_DIR,random_code
 import logging
 import aiofiles
 from fastapi import UploadFile,File
+from dotenv import load_dotenv
+import os
+import boto3
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
+
+
+BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
+AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
+AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
+AWS_REGION = os.getenv('AWS_REGION')
+
+s3_client = boto3.client(
+    's3',
+    aws_access_key_id=AWS_ACCESS_KEY_ID,
+    aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
+    region_name=AWS_REGION
+)
 
 class AgentService:
     async def get_agent_by_agentid(self, agentid: str, session: AsyncSession):
@@ -31,12 +49,13 @@ class AgentService:
         create_at = datetime.utcnow()
         update_at = datetime.utcnow()
 
-        file_path = UPLOAD_DIR / id_proof.filename
-        async with aiofiles.open(file_path, "wb") as buffer:
-            content = await id_proof.read()
-            await buffer.write(content)
+        folder_name = "Agent/"
 
-        file_url = f"http://127.0.0.1:8000/uploads/{id_proof.filename}"
+        file_path = f"{folder_name}{id_proof.filename}"
+
+        s3_client.upload_fileobj(id_proof.file, BUCKET_NAME, file_path)
+        file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
+
 
         code = random_code()
 

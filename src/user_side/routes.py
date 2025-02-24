@@ -19,6 +19,7 @@ import requests
 from typing import Optional
 from typing import List
 from src.admin_side.models import policytable
+from math import pow
 
 
 auth_router = APIRouter()
@@ -280,6 +281,7 @@ async def update_profile(userId: UUID,
 
     return JSONResponse(status_code=200, content={"message": "Profile updated successfully"})
 
+
 @auth_router.get("/policydetails/{userId}", response_model=dict)
 async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_session),
                            user_details=Depends(access_token_bearer)):
@@ -311,17 +313,35 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
         try:
             min_age, max_age = map(int, policy.age_group.split('-'))  # Convert "26-35" to (26, 35)
             if min_age <= age <= max_age:
+                # Policy Details
+                policy_id = str(policy.policy_uid)
+                coverage = policy.coverage
+                settlement = policy.settlement
+                premium_amount = float(policy.premium_amount)  # Ensure numeric conversion
+
+                # Calculate Monthly Payment
+                r = 0.06  # 6% Annual Interest Rate
+                n = 12  # Monthly payments
+                t = int(coverage) - age  # Years until age 60
+
+                if t > 0:  # Ensure valid term
+                    monthly_payment = (premium_amount * (r / n)) / (1 - pow(1 + (r / n), -n * t))
+                else:
+                    monthly_payment = premium_amount / 12  # Default to simple monthly payment
+
                 matching_policies.append({
-                    "policy_id": str(policy.policy_uid),
-                    "coverage": policy.coverage,
-                    "settlement": policy.settlement,
-                    "premium_amount": policy.premium_amount,
+                    "policy_id": policy_id,
+                    "coverage": coverage,
+                    "settlement": settlement,
+                    "premium_amount": premium_amount,
+                    "monthly_payment": round(monthly_payment, 2),  # Rounded for better readability
                 })
         except ValueError:
             print(f"Invalid age group format: {policy.age_group}")
 
     if not matching_policies:
         return JSONResponse(status_code=404, content={"message": "No matching policies found"})
+    
     return JSONResponse(status_code=200, content={"matching_policies": matching_policies})
 
 
