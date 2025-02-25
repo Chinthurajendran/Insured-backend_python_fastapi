@@ -249,7 +249,8 @@ async def update_profile(userId: UUID,
                          city: str = Form(...),
                          marital_status: str = Form(...),
                          annual_income: str = Form(...),
-                         image: UploadFile = File(...),
+                         image_url: Optional[str] = Form(None),
+                         image: Optional[UploadFile] = File(None),
                          session: AsyncSession = Depends(get_session)):
     try:
         date_of_birth = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
@@ -280,6 +281,27 @@ async def update_profile(userId: UUID,
     update_user = await user_service.profile_update(user_data, userId, image, session)
 
     return JSONResponse(status_code=200, content={"message": "Profile updated successfully"})
+
+
+@auth_router.get("/listpolicy/{userId}", response_model=dict)
+async def listpolicy(
+    userId: UUID, 
+    session: AsyncSession = Depends(get_session),
+    user_details=Depends(access_token_bearer)
+):
+
+    result = await session.execute(select(usertable).where(usertable.user_id == userId))
+    user = result.scalars().first()
+
+    if user is None:
+        return JSONResponse(status_code=404, content={"message": "User not found"})
+
+    if not user.profile_status:
+        return JSONResponse(status_code=400, content={"message": "Profile is not updated"})
+
+    return JSONResponse(status_code=200,content={"message": "Profile is not updated"})
+        
+
 
 
 @auth_router.get("/policydetails/{userId}", response_model=dict)
