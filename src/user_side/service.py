@@ -88,12 +88,13 @@ class UserService:
 
     async def profile_update(self, user_data: ProfileCreateRequest, user_Id, image: UploadFile, session: AsyncSession):
         try:
-            folder_name = "Users/"
+            if image is not None:
+                    folder_name = "Users/"
 
-            file_path = f"{folder_name}{image.filename}"
+                    file_path = f"{folder_name}{image.filename}"
 
-            s3_client.upload_fileobj(image.file, BUCKET_NAME, file_path)
-            file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
+                    s3_client.upload_fileobj(image.file, BUCKET_NAME, file_path)
+                    file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
 
             result = await session.execute(select(usertable).where(usertable.user_id == user_Id))
             user = result.scalars().first()
@@ -109,7 +110,8 @@ class UserService:
             user.city = user_data.city
             user.marital_status = user_data.marital_status
             user.annual_income = user_data.annual_income
-            user.image = file_url 
+            if image is not None:
+                user.image = file_url 
             user.profile_status = True 
 
             session.add(user)

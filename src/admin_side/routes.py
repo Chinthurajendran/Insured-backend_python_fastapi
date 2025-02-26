@@ -576,3 +576,5 @@ async def block_user(userId: UUID,
     policy.delete_status = True
     await session.commit()
     return JSONResponse(status_code=200, content={"message": "Updated."})
+
+

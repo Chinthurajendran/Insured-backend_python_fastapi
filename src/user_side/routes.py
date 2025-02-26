@@ -218,7 +218,7 @@ async def logout_agent(
 
 
 @auth_router.get("/user_profile/{userId}", response_model=list[dict])
-async def agent_approval_and_rejection(userId: UUID, session: AsyncSession = Depends(get_session), agent_details=Depends(access_token_bearer)):
+async def user_profile(userId: UUID, session: AsyncSession = Depends(get_session), agent_details=Depends(access_token_bearer)):
     result = await session.execute(select(usertable).where(usertable.user_id == userId))
     user = result.scalars().first()
 
@@ -329,13 +329,18 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
     policies_result = await session.execute(select(policytable).where(policytable.income_range == income))
     policies = policies_result.scalars().all()
 
+    print("111111111")
+
     # Filter policies based on age group range
     matching_policies = []
+    print("9999999999999999")
+    print("qqqqqqqqqqqqqqqqqqq",policies)
     for policy in policies:
         try:
             min_age, max_age = map(int, policy.age_group.split('-'))  # Convert "26-35" to (26, 35)
             if min_age <= age <= max_age:
                 # Policy Details
+                print("22222222222")
                 policy_id = str(policy.policy_uid)
                 coverage = policy.coverage
                 settlement = policy.settlement
@@ -348,6 +353,7 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
 
                 if t > 0:  # Ensure valid term
                     monthly_payment = (premium_amount * (r / n)) / (1 - pow(1 + (r / n), -n * t))
+                    print("3333333333333")
                 else:
                     monthly_payment = premium_amount / 12  # Default to simple monthly payment
 
@@ -358,12 +364,15 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
                     "premium_amount": premium_amount,
                     "monthly_payment": round(monthly_payment, 2),  # Rounded for better readability
                 })
+                print("44444444444")
         except ValueError:
+            print("55555555555555555")
             print(f"Invalid age group format: {policy.age_group}")
 
     if not matching_policies:
+        print("666666666666666666")
         return JSONResponse(status_code=404, content={"message": "No matching policies found"})
-    
+    print("777777777777777777")
     return JSONResponse(status_code=200, content={"matching_policies": matching_policies})
 
 

@@ -33,3 +33,20 @@ class AgentLoginModel(BaseModel):
     password:str
     latitude: Optional[float] = None
     longitude: Optional[float] = None
+
+
+class ExistingUserPolicy(BaseModel):
+    email: EmailStr
+    policy_name: str
+    policy_type: str
+    nominee_name: str
+    nominee_relationship: str
+
+
+class AgentProfileCreateRequest(BaseModel):
+    username: str
+    email: str
+    phone: str
+    gender: str
+    city: str
+    date_of_birth: date  

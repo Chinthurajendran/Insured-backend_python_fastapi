@@ -10,6 +10,7 @@ from fastapi import UploadFile,File
 from dotenv import load_dotenv
 import os
 import boto3
+import traceback
 
 load_dotenv()
 
@@ -29,11 +30,26 @@ s3_client = boto3.client(
 )
 
 class AgentService:
+
+    async def get_agent_by_id(self,agent_id:str,session:AsyncSession):
+        statement = select(AgentTable).where(AgentTable.agent_id == agent_id)
+        result = await session.exec(statement)
+
+        user = result.first()
+        
+        return user
+
     async def get_agent_by_agentid(self, agentid: str, session: AsyncSession):
         statement = select(AgentTable).where(AgentTable.agent_userid == agentid)
         result = await session.exec(statement)
         agent = result.first()
         return agent
+    
+    async def exist_agent_id(self,agent_id:str,session:AsyncSession):
+        user = await self.get_agent_by_id(agent_id,session)
+
+        return True if user is not None else False
+    
 
     async def exist_email(self, agentid: str, session: AsyncSession):
         agents = await self.get_agent_by_agentid(agentid, session)
@@ -80,6 +96,44 @@ class AgentService:
         logger.info(f"New user created: {new_agent.agent_name}")
 
         return new_agent
+
+
+    async def profile_update(self, agent_data: AgentProfileCreateRequest, 
+                             agentID, image: UploadFile, session: AsyncSession):
+        try:
+            if image is not None:
+                folder_name = "Agent/Agnet Profile image/"
+
+                file_path = f"{folder_name}{image.filename}"
+
+                s3_client.upload_fileobj(image.file, BUCKET_NAME, file_path)
+                file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
+
+            result = await session.execute(select(AgentTable).where(AgentTable.agent_id == agentID))
+            agent = result.scalars().first()
+
+            if not agent:
+                return {"error": "Agent not found"}
+
+            agent.agent_name = agent_data.username
+            agent.agent_email = agent_data.email
+            agent.phone = agent_data.phone
+            agent.gender = agent_data.gender
+            agent.date_of_birth = agent_data.date_of_birth
+            agent.city = agent_data.city
+            if image is not None:
+                agent.agent_profile = file_url 
+
+            session.add(agent)
+            await session.flush()  # Ensure changes are detected
+            await session.commit()  # Save changes to the database
+
+            return {"message": "Profile updated successfully"}
+
+        except Exception as e:
+                await session.rollback()  # Rollback changes if an error occurs
+                traceback.print_exc()  # Print the full error details
+                return {"error": str(e)}
 
 
 
