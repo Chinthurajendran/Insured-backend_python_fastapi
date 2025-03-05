@@ -42,7 +42,7 @@ class TokenBearer(HTTPBearer):
         if agent_role != "agent":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Access denied! Only user are allowed."
+                detail="Access denied! Only Agent are allowed."
             )
 
 class AccessTokenBearer(TokenBearer):
@@ -56,6 +56,7 @@ class AccessTokenBearer(TokenBearer):
 
 class RefreshTokenBearer(TokenBearer):
     def verify_token_data(self, token_data: dict):
+        print("ttttttttttttttttttttt",token_data)
         if token_data and not token_data['refresh']:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

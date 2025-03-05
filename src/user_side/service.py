@@ -115,13 +115,13 @@ class UserService:
             user.profile_status = True 
 
             session.add(user)
-            await session.flush()  # Ensure changes are detected
-            await session.commit()  # Save changes to the database
+            await session.flush() 
+            await session.commit() 
 
             return {"message": "Profile updated successfully"}
 
         except Exception as e:
-                await session.rollback()  # Rollback changes if an error occurs
-                traceback.print_exc()  # Print the full error details
+                await session.rollback() 
+                traceback.print_exc()
                 return {"error": str(e)}
 

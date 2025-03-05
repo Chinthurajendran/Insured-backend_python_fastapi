@@ -16,7 +16,9 @@ class TokenBearer(HTTPBearer):
         creds = await super().__call__(request)
         token = creds.credentials
 
+        print("qqqqqqqqqqqqqqqqqq",token)
         token_data = decode_token(token)
+        print("wwwwwwwwwwwwwwwwwww",token_data)
         
         if not self.token_valid(token):
             raise HTTPException(
@@ -66,6 +68,7 @@ class AccessTokenBearer(TokenBearer):
 
 class RefreshTokenBearer(TokenBearer):
     def verify_token_data(self, token_data: dict):
+        print("ttttttttttttttttttttt",token_data)
         if token_data and not token_data['refresh']:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

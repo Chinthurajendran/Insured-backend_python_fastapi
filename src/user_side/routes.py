@@ -187,13 +187,16 @@ async def google_login(auth_data: GoogleAuthModel, session: AsyncSession = Depen
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
-@auth_router.get("/user_refresh_token")
+@auth_router.post("/user_refresh_token")
 async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer())):
     expiry_timestamp = token_details["exp"]
     if datetime.fromtimestamp(expiry_timestamp) > datetime.now():
         new_access_token = create_access_token(
             user_data=token_details['user']
         )
+
+        if isinstance(new_access_token, bytes):
+            new_access_token = new_access_token.decode('utf-8')
 
         return JSONResponse(content={"access_token": new_access_token})
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
@@ -314,65 +317,53 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
     if not user:
         return JSONResponse(status_code=404, content={"message": "Agent not found"})
 
-    # Extract user details
+
     dob = user.date_of_birth
     income = user.annual_income
 
     print("User's Income:", income)
 
-    # Calculate age
+
     today = date.today()
     age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
     print(f"User ID: {userId}, Age: {age}")
 
-    # Fetch all policies
+
     policies_result = await session.execute(select(policytable).where(policytable.income_range == income))
     policies = policies_result.scalars().all()
 
-    print("111111111")
-
-    # Filter policies based on age group range
     matching_policies = []
-    print("9999999999999999")
-    print("qqqqqqqqqqqqqqqqqqq",policies)
     for policy in policies:
         try:
-            min_age, max_age = map(int, policy.age_group.split('-'))  # Convert "26-35" to (26, 35)
+            min_age, max_age = map(int, policy.age_group.split('-'))  
             if min_age <= age <= max_age:
-                # Policy Details
-                print("22222222222")
+
                 policy_id = str(policy.policy_uid)
                 coverage = policy.coverage
                 settlement = policy.settlement
-                premium_amount = float(policy.premium_amount)  # Ensure numeric conversion
+                premium_amount = float(policy.premium_amount)  
 
-                # Calculate Monthly Payment
-                r = 0.06  # 6% Annual Interest Rate
-                n = 12  # Monthly payments
-                t = int(coverage) - age  # Years until age 60
+                r = 0.06 
+                n = 12  
+                t = int(coverage) - age 
 
                 if t > 0:  # Ensure valid term
                     monthly_payment = (premium_amount * (r / n)) / (1 - pow(1 + (r / n), -n * t))
-                    print("3333333333333")
                 else:
-                    monthly_payment = premium_amount / 12  # Default to simple monthly payment
+                    monthly_payment = premium_amount / 12 
 
                 matching_policies.append({
                     "policy_id": policy_id,
                     "coverage": coverage,
                     "settlement": settlement,
                     "premium_amount": premium_amount,
-                    "monthly_payment": round(monthly_payment, 2),  # Rounded for better readability
+                    "monthly_payment": round(monthly_payment, 2), 
                 })
-                print("44444444444")
         except ValueError:
-            print("55555555555555555")
             print(f"Invalid age group format: {policy.age_group}")
 
     if not matching_policies:
-        print("666666666666666666")
         return JSONResponse(status_code=404, content={"message": "No matching policies found"})
-    print("777777777777777777")
     return JSONResponse(status_code=200, content={"matching_policies": matching_policies})
 
 

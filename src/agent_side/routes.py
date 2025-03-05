@@ -18,10 +18,14 @@ import logging
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from src.mail import mail_config
 from src.admin_side.models import *
+from src.user_side.models import *
+from src.user_side.service import UserService
+from typing import List
 
 agent_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
 agent_service = AgentService()
+user_service = UserService()
 REFRESH_TOKEN_EXPIRY = 2
 
 logger = logging.getLogger(__name__)
@@ -159,7 +163,7 @@ async def logout_agent(
     return JSONResponse(status_code=200, content={"message": "Agent logged out successfully."})
 
 
-@agent_router.post("/refresh_token")
+@agent_router.post("/agent_refresh_token")
 async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer())):
     expiry_timestamp = token_details["exp"]
     if datetime.fromtimestamp(expiry_timestamp) > datetime.now():
@@ -167,6 +171,9 @@ async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer(
             user_data=token_details['user']
         )
 
+        if isinstance(new_access_token, bytes):
+            new_access_token = new_access_token.decode('utf-8')
+        
         return JSONResponse(content={"access_token": new_access_token})
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Invalid or expired token")
@@ -178,11 +185,10 @@ async def policyname(
     user_details=Depends(access_token_bearer)
 ):
     try:
-        # Fetch policy names
+
         result = await session.execute(select(policytable.policy_name))
         policies = result.scalars().all()
 
-        # Fetch additional fields
         filed_result = await session.execute(
             select(
                 policytable.id_proof,
@@ -194,10 +200,9 @@ async def policyname(
             )
         )
 
-        filed_data = filed_result.fetchall()  # Get all rows
-        field_keys = filed_result.keys()  # Get column names
+        filed_data = filed_result.fetchall()  
+        field_keys = filed_result.keys()  
 
-        # Convert rows to a list of dictionaries
         additional_fields = [dict(zip(field_keys, row)) for row in filed_data]
 
         return JSONResponse(
@@ -211,20 +216,146 @@ async def policyname(
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
     
-from typing import List
 
-@agent_router.post("/ExistingCustomer")
-async def ExistingCustomer(email: EmailStr = Form(...),
+
+@agent_router.post("/ExistingCustomer/{agentID}")
+async def ExistingCustomer(agentID: UUID,
+                           email: EmailStr = Form(...),
                            insurancePlan: str = Form(...),
                            insuranceType: str = Form(...),
                            nomineeName: str = Form(...),
                            nomineeRelation: str = Form(...), 
-                           documents: List[UploadFile] = File(...),
+                           id_proof: Optional[UploadFile] = File(None),
+                           passbook: Optional[UploadFile] = File(None),
+                           income_proof: Optional[UploadFile] = File(None),
+                           photo: Optional[UploadFile] = File(None),
+                           pan_card: Optional[UploadFile] = File(None),
+                           nominee_address_proof: Optional[UploadFile] = File(None),
                            session: AsyncSession = Depends(get_session),
                            user_details=Depends(access_token_bearer)):
-    print("eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee")
+    
+    user_exists_with_email = await user_service.exist_email(email, session)
 
-    return JSONResponse(status_code=status.HTTP_200_OK)
+    if not user_exists_with_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail={"message": "User profile is incomplete. Please update the profile before proceeding."})
+    
+    result = await session.execute(select(usertable).where(usertable.email == email))
+    user = result.scalars().first()
+    if not user.profile_status:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail={"message": "User profile is incomplete. Please update the profile before proceeding."})
+    
+    agent_data = ExistingUserPolicyRequest(
+        email=email,
+        policy_name=insurancePlan,
+        policy_type=insuranceType,
+        nominee_name=nomineeName,
+        nominee_relationship=nomineeRelation,
+    )
+
+    try:
+        update_user = await agent_service.ExistingUserPolicyCreation(agent_data, agentID, id_proof, passbook, income_proof,
+                                                                      photo, pan_card, nominee_address_proof, session)
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"message": f"An error occurred while updating the Policy: {str(e)}"}
+        )
+
+    if not update_user:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"message": "An error occurred while updating the Policy. Please try again later."}
+        )
+
+    return JSONResponse(status_code=200, content={"message": "Policy Submitted to admin"})
+
+@agent_router.post("/NewCustomer/{agentID}")
+async def new_customer(
+    agentID: UUID,
+    email: EmailStr = Form(...),
+    name: str = Form(...),
+    phone: str = Form(...),
+    dob: str = Form(...),
+    gender: str = Form(...),
+    city: str = Form(...),
+    maritalStatus: str = Form(...),
+    income: str = Form(...),
+    insurancePlan: str = Form(...),
+    insuranceType: str = Form(...),
+    nomineeName: str = Form(...),
+    nomineeRelation: str = Form(...),
+    id_proof: Optional[UploadFile] = File(None),
+    passbook: Optional[UploadFile] = File(None),
+    income_proof: Optional[UploadFile] = File(None),
+    photo: Optional[UploadFile] = File(None),
+    pan_card: Optional[UploadFile] = File(None),
+    nominee_address_proof: Optional[UploadFile] = File(None),
+    session: AsyncSession = Depends(get_session),
+    user_details=Depends(access_token_bearer)
+):
+    try:
+        date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date()
+
+        user_exists_with_email = await user_service.exist_email(email, session)
+        if user_exists_with_email:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Email already used"}
+            )
+
+        new_user_data = NewUserPolicyRequest(
+            username=name,
+            email=email,
+            phone=phone,
+            date_of_birth=date_of_birth,
+            gender=gender,
+            city=city,
+            marital_status=maritalStatus,
+            annual_income=income,
+            policy_name=insurancePlan,
+            policy_type=insuranceType,
+            nominee_name=nomineeName,
+            nominee_relationship=nomineeRelation,
+        )
+
+        # Create new user
+        new_user = await agent_service.create_newuser(new_user_data, session)
+        if not new_user:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"message": "User creation failed. Please try again later."}
+            )
+
+        # Create policy for the existing user
+        agent_data = ExistingUserPolicyRequest(
+            email=email,
+            policy_name=insurancePlan,
+            policy_type=insuranceType,
+            nominee_name=nomineeName,
+            nominee_relationship=nomineeRelation
+        )
+
+        update_user = await agent_service.ExistingUserPolicyCreation(
+            agent_data, agentID, id_proof, passbook, income_proof, photo, pan_card, nominee_address_proof, session
+        )
+        if not update_user:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"message": "Policy creation failed. Please try again later."}
+            )
+
+        return JSONResponse(status_code=200, content={"message": "Policy Submitted to admin"})
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"message": f"An error occurred: {str(e)}"}
+        )
+
 
 
 @agent_router.get("/agent_profile/{agentID}", response_model=list[dict])

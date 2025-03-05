@@ -35,8 +35,22 @@ class AgentLoginModel(BaseModel):
     longitude: Optional[float] = None
 
 
-class ExistingUserPolicy(BaseModel):
+class ExistingUserPolicyRequest(BaseModel):
     email: EmailStr
+    policy_name: str
+    policy_type: str
+    nominee_name: str
+    nominee_relationship: str
+
+class NewUserPolicyRequest(BaseModel):
+    username:str
+    email: EmailStr
+    phone: str
+    date_of_birth:date  
+    gender:str
+    city:str
+    marital_status:str
+    annual_income:str
     policy_name: str
     policy_type: str
     nominee_name: str

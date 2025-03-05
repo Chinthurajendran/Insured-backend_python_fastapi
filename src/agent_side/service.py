@@ -6,11 +6,19 @@ from datetime import datetime
 from src.utils import generate_passwd_hash,UPLOAD_DIR,random_code
 import logging
 import aiofiles
-from fastapi import UploadFile,File
+from fastapi import UploadFile,File,HTTPException,status
 from dotenv import load_dotenv
 import os
 import boto3
 import traceback
+from src.admin_side.models import*
+from src.user_side.models import*
+from math import pow
+import secrets
+import string
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+from src.utils import generate_passwd_hash,UPLOAD_DIR
+from src.mail import mail_config
 
 load_dotenv()
 
@@ -125,15 +133,161 @@ class AgentService:
                 agent.agent_profile = file_url 
 
             session.add(agent)
-            await session.flush()  # Ensure changes are detected
-            await session.commit()  # Save changes to the database
+            await session.flush() 
+            await session.commit()
 
             return {"message": "Profile updated successfully"}
 
         except Exception as e:
-                await session.rollback()  # Rollback changes if an error occurs
-                traceback.print_exc()  # Print the full error details
+                await session.rollback() 
+                traceback.print_exc() 
                 return {"error": str(e)}
 
 
+    async def ExistingUserPolicyCreation(self, agent_data: ExistingUserPolicyRequest, 
+                                agentID, 
+                                id_proof: UploadFile,
+                                passbook: UploadFile,
+                                income_proof: UploadFile,
+                                photo: UploadFile,
+                                pan_card: UploadFile,
+                                nominee_address_proof: UploadFile,
+                                session: AsyncSession):
+        try:
+            print("111111111111111111")
+            async def upload_to_s3(file: UploadFile, folder_name: str) -> str:
+                file_path = f"{folder_name}/{file.filename}"
+                s3_client.upload_fileobj(file.file, BUCKET_NAME, file_path)
+                file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
+                return file_url
 
+            code = random_code()
+            
+            folder_name = f"Agent/PolicyDocuments/EUPC{code}"
+
+            id_proof_url = await upload_to_s3(id_proof, folder_name) if id_proof else None
+            passbook_url = await upload_to_s3(passbook, folder_name) if passbook else None
+            income_proof_url = await upload_to_s3(income_proof, folder_name) if income_proof else None
+            photo_url = await upload_to_s3(photo, folder_name) if photo else None
+            pan_card_url = await upload_to_s3(pan_card, folder_name) if pan_card else None
+            nominee_address_proof_url = await upload_to_s3(nominee_address_proof, folder_name) if nominee_address_proof else None
+            print("2222222222222222")
+            policy_result = await session.execute(select(policytable).where(policytable.policy_name == agent_data.policy_type))
+            policys = policy_result.scalars().first()
+            users_result = await session.execute(select(usertable).where(usertable.email == agent_data.email))
+            users = users_result.scalars().first()
+            print("0000000000000",policys)
+            create_at = datetime.utcnow()
+            update_at = datetime.utcnow()
+            date_of_payment = datetime.utcnow()
+            print("333333333333333333")
+            coverage = policys.coverage
+            settlement = policys.settlement
+            premium_amount = float(policys.premium_amount)  
+
+            dob = users.date_of_birth
+            today = date.today()
+            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+            r = 0.06  
+            n = 12  
+            t = int(coverage) - age 
+
+            if t > 0: 
+                monthly_payment = (premium_amount * (r / n)) / (1 - pow(1 + (r / n), -n * t))
+            else:
+                monthly_payment = premium_amount / 12  
+            print("444444444444444444")
+            new_policy = PolicyDetails(
+                user_id=users.user_id,
+                agent_id=agentID,
+                policy_id=policys.policy_uid,
+                policy_holder=users.username,
+                gender = users.gender,
+                policy_name=agent_data.policy_name,
+                policy_type=agent_data.policy_type,
+                nominee_name=agent_data.nominee_name,
+                nominee_relationship=agent_data.nominee_relationship,
+                coverage=policys.coverage,
+                settlement=policys.settlement,
+                premium_amount=policys.premium_amount,
+                income_range=policys.income_range,
+                monthly_amount=monthly_payment,
+                age=str(age),
+                id_proof=id_proof_url,
+                passbook=passbook_url,
+                photo=photo_url,
+                pan_card=pan_card_url,
+                income_proof=income_proof_url,
+                nominee_address_proof=nominee_address_proof_url,
+                date_of_payment=date_of_payment,
+                create_at=create_at,
+                update_at=update_at
+            )
+
+            session.add(new_policy)
+            await session.flush() 
+            await session.commit()
+
+            return {"message": "Profile updated successfully"}
+
+        except Exception as e:
+            print("88888888888888888")
+            await session.rollback()
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"message": f"An error occurred: {str(e)}"}
+            )
+        
+    async def create_newuser(self, user_details: NewUserPolicyRequest, session: AsyncSession):
+        create_at = datetime.utcnow()
+        update_at = datetime.utcnow()
+
+        # Function to generate a strong 10-character password
+        def generate_strong_password(length=10):
+            alphabet = string.ascii_letters + string.digits + string.punctuation
+            return ''.join(secrets.choice(alphabet) for _ in range(length))
+
+        raw_password = generate_strong_password()
+        hashed_password = generate_passwd_hash(raw_password)
+
+        new_user = usertable(
+            username=user_details.username,
+            email=user_details.email,
+            password=hashed_password,  # Store hashed password
+            gender=user_details.gender,
+            phone=user_details.phone,
+            date_of_birth=user_details.date_of_birth,
+            annual_income=user_details.annual_income,
+            marital_status=user_details.marital_status,
+            city=user_details.city,
+            create_at=create_at,
+            update_at=update_at
+        )
+
+        session.add(new_user)
+        await session.commit()
+        await session.refresh(new_user)
+
+        # Email message with login credentials
+        message = MessageSchema(
+            subject="Your Account Details",
+            recipients=[user_details.email],
+            body=f"Hello {user_details.username},\n\n"
+                f"Your account has been created successfully.\n\n"
+                f"Here are your login credentials:\n"
+                f"Email: {user_details.email}\n"
+                f"Password: {raw_password} (Please change it after logging in.)\n\n"
+                f"Best regards,\n"
+                f"Your Team",
+            subtype="plain"
+        )
+
+        fm = FastMail(mail_config)
+        try:
+            await fm.send_message(message)
+            return new_user
+        except Exception as e:
+            print("Error sending email:", e)
+            return {"error": "User created, but email failed to send."}

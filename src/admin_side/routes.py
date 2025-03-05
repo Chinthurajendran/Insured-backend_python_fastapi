@@ -26,13 +26,69 @@ import logging
 from src.agent_side.models import *
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from src.mail import mail_config
-
+from .service import AdminService
+from sqlalchemy import or_
 
 logger = logging.getLogger(__name__)
 
 admin_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
+admin_service = AdminService()
 REFRESH_TOKEN_EXPIRY = 2
+
+
+# @admin_router.post("/admin_login")
+# async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depends(get_session)):
+#     username = login_data.username
+#     password = login_data.password
+
+#     if username == 'Admin' and password == 'Admin':
+#         admin_access_token = create_access_token(
+#             user_data={
+#                 'admin_username': username,
+#                 'admin_role': 'admin'
+#             }
+#         )
+
+#         admin_refresh_token = create_access_token(
+#             user_data={
+#                 'admin_username': username,
+#                 'admin_role': 'admin'
+#             },
+#             refresh=True,
+#             expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
+#         )
+
+#         if isinstance(admin_access_token, bytes):
+#             admin_access_token = admin_access_token.decode("utf-8")
+#         if isinstance(admin_refresh_token, bytes):
+#             admin_refresh_token = admin_refresh_token.decode("utf-8")
+
+
+#         response.set_cookie(
+#             key="refresh_token",
+#             value=admin_refresh_token,
+#             httponly=True,  # Prevents JavaScript access
+#             secure=True,  # Only send over HTTPS
+#             samesite="Strict"  # Mitigates CSRF
+#         )
+
+#         return JSONResponse(
+#             status_code=status.HTTP_200_OK,
+#             content={
+#                 "message": "Login successful",
+#                 "admin_access_token": admin_access_token,
+#                 "admin_refresh_token": admin_refresh_token,
+#                 "admin_username": username,
+#                 'admin_role': 'admin'
+#             }
+#         )
+
+#     raise HTTPException(
+#         status_code=status.HTTP_403_FORBIDDEN,
+#         detail="Invalid Email or Password"
+#     )
+
 
 
 @admin_router.post("/admin_login")
@@ -42,28 +98,24 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
 
     if username == 'Admin' and password == 'Admin':
         admin_access_token = create_access_token(
-            user_data={
-                'admin_username': username,
-                'admin_role': 'admin'
-            }
+            user_data={'admin_username': username, 'admin_role': 'admin'}
         )
 
         admin_refresh_token = create_access_token(
-            user_data={
-                'admin_username': username,
-                'admin_role': 'admin'
-            },
+            user_data={'admin_username': username, 'admin_role': 'admin'},
             refresh=True,
-            expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
+            expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)  # Adjust the refresh token expiry as needed
         )
-
 
         if isinstance(admin_access_token, bytes):
             admin_access_token = admin_access_token.decode("utf-8")
         if isinstance(admin_refresh_token, bytes):
             admin_refresh_token = admin_refresh_token.decode("utf-8")
 
-        return JSONResponse(
+        logging.info(f"Admin Access Token: {admin_access_token}")
+        logging.info(f"Admin Refresh Token: {admin_refresh_token}")
+
+        response = JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "message": "Login successful",
@@ -74,10 +126,23 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
             }
         )
 
+        # Ensure cookies attributes are correctly set
+        response.set_cookie(
+            key="refresh_token",
+            value=admin_refresh_token,
+            httponly=True,
+            secure=False,  # Set to True in production
+            samesite="Lax"
+        )
+
+        return response
+
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
         detail="Invalid Email or Password"
     )
+
+
 
 @admin_router.get("/user_date", response_model=list[dict])
 async def user_list(session: AsyncSession = Depends(get_session),
@@ -112,48 +177,32 @@ async def user_list(session: AsyncSession = Depends(get_session),
 
 @admin_router.post("/policy_create", response_model=PolicyCreateResponse, status_code=status.HTTP_201_CREATED)
 async def create_policy(policy_data: PolicyCreateRequest, session: AsyncSession = Depends(get_session)):
-    logger.info(f"Received request data: {policy_data}")
 
     try:
-        result = await session.execute(select(policytable).
-                                       where(policytable.policy_id == policy_data.policy_id))
-        existing_policy = result.scalar()
+        policy_exists = await admin_service.exist_policy(policy_data.policy_name,session)
+        if policy_exists:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="A policy with this name already exists. Please choose a different name."
+            )
 
-        new_policy = policytable(
-            policy_id=policy_data.policy_id,
-            policy_name=policy_data.policy_name,
-            policy_type=policy_data.policy_type,
-            id_proof=policy_data.id_proof,
-            passbook=policy_data.passbook,
-            photo=policy_data.photo,
-            pan_card=policy_data.pan_card,
-            income_proof=policy_data.income_proof,
-            nominee_address_proof=policy_data.nominee_address_proof,
-            coverage=policy_data.coverage,
-            settlement=policy_data.settlement,
-            premium_amount=policy_data.premium_amount,
-            age_group=policy_data.age_group,
-            income_range=policy_data.income_range,
-            description=policy_data.description,
-            create_at=datetime.utcnow(),
-            update_at=datetime.utcnow()
-        )
-
-        session.add(new_policy)
-        await session.commit()
-        await session.refresh(new_policy)
+        new_policy = await admin_service.create_new_policy(policy_data,session)
+        if not new_policy:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create the policy due to an internal server error."
+            )
 
         return JSONResponse(
             status_code=201,
             content={"message": "Policy created successfully!"}
         )
-    except ValidationError as e:
-        logger.error(f"Validation error: {e}")
-        raise HTTPException(status_code=422, detail=e.errors())
-    except Exception as e:
-        logger.error(f"Unexpected error: {e}")
+
+    except Exception:
         raise HTTPException(
-            status_code=500, detail="Policy with the given policy_id already exists.")
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An unexpected error occurred while creating the policy. Please try again later."
+        )
 
 
 @admin_router.get("/policy_list", response_model=List[dict])
@@ -177,6 +226,7 @@ async def policy_data(session: AsyncSession = Depends(get_session),
         policytable.age_group,
         policytable.description,
         policytable.income_range,
+        policytable.policy_id,
     ).where(policytable.delete_status == False))
     policies = result.all()
     policy_list = []
@@ -199,6 +249,7 @@ async def policy_data(session: AsyncSession = Depends(get_session),
             "age_group": row[14],
             "description": row[15],
             "income_range": row[16],
+            "policy_id": row[17],
         })
 
     return JSONResponse(
@@ -206,8 +257,9 @@ async def policy_data(session: AsyncSession = Depends(get_session),
         content={"policy": policy_list}
     )
 
+
 @admin_router.get("/policy_edit_list/{policyId}", response_model=List[dict])
-async def policy_data(policyId: UUID,session: AsyncSession = Depends(get_session),
+async def policy_data(policyId: UUID, session: AsyncSession = Depends(get_session),
                       policy_details=Depends(access_token_bearer)):
     result = await session.execute(select(
         policytable.policy_id,
@@ -262,7 +314,6 @@ async def policy_data(policyId: UUID,session: AsyncSession = Depends(get_session
 @admin_router.put("/policy_edit/{policyId}", response_model=dict)
 async def edit_policy(policyId: UUID, policy_data: PolicyediteRequest, session: AsyncSession = Depends(get_session)):
 
-
     try:
         result = await session.execute(select(policytable).
                                        where(policytable.policy_uid == policyId))
@@ -270,7 +321,6 @@ async def edit_policy(policyId: UUID, policy_data: PolicyediteRequest, session: 
 
         if not policys:
             raise HTTPException(status_code=404, detail="Policy not found")
-        
 
         policys.policy_id = policy_data.policy_id
         policys.policy_name = policy_data.policy_name
@@ -310,7 +360,8 @@ async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer(
         new_access_token = create_access_token(
             user_data=token_details['user']
         )
-
+        if isinstance(new_access_token, bytes):
+            new_access_token = new_access_token.decode('utf-8')
         return JSONResponse(content={"admin_access_token": new_access_token})
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Invalid or expired token")
@@ -448,23 +499,23 @@ async def agent_approved_list(session: AsyncSession = Depends(get_session),
                               user_details=Depends(access_token_bearer)):
 
     result = await session.execute(select(
-        AgentTable.agent_name, 
-        AgentTable.agent_email, 
+        AgentTable.agent_name,
+        AgentTable.agent_email,
         AgentTable.agent_userid,
         AgentTable.agent_id,
         AgentTable.role,
         AgentTable.block_status,
-        AgentTable.phone, 
+        AgentTable.phone,
         AgentTable.gender,
         AgentTable.date_of_birth,
         AgentTable.agent_profile,
-        AgentTable.agent_login_status, 
+        AgentTable.agent_login_status,
         AgentTable.city
     ).where(and_(
         AgentTable.approval_status == 'approved',
         AgentTable.delete_status == False
     )))
-    
+
     agents = result.all()
     if not agents:
         return JSONResponse(status_code=404, content={"message": "Agent not found"})
@@ -491,7 +542,6 @@ async def agent_approved_list(session: AsyncSession = Depends(get_session),
         })
 
     return JSONResponse(status_code=200, content={"agents": agent_data})
-
 
 
 @admin_router.put("/user_block/{userId}", response_model=dict)
@@ -578,3 +628,120 @@ async def block_user(userId: UUID,
     return JSONResponse(status_code=200, content={"message": "Updated."})
 
 
+
+@admin_router.get("/Policy_list", response_model=dict)
+async def policy_list(session: AsyncSession = Depends(get_session),
+                          user_details=Depends(access_token_bearer)):
+
+    try:
+        result = await session.execute(
+            select(
+                PolicyDetails.policydetails_uid, PolicyDetails.user_id,
+                PolicyDetails.agent_id, PolicyDetails.policy_holder,
+                PolicyDetails.policy_type, PolicyDetails.coverage,
+                PolicyDetails.settlement, PolicyDetails.premium_amount,
+                PolicyDetails.monthly_amount, PolicyDetails.age,
+                PolicyDetails.income_range, PolicyDetails.policy_status,
+            )
+        )
+
+        policies = result.all()
+
+        if not policies:
+            return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"message": "Policy not found"})
+        
+        policies_data = [dict(policy._asdict()) for policy in policies]
+        for policy in policies_data:
+            policy['policydetails_uid'] = str(policy['policydetails_uid'])
+            policy['user_id'] = str(policy['user_id'])
+            policy['agent_id'] = str(policy['agent_id'])
+            policy['policy_status'] = policy['policy_status'].value  # Convert enum to string
+
+        return JSONResponse(status_code=200, content={"policies": policies_data})
+
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching policies: {str(e)}"
+        )
+    
+
+@admin_router.get("/PolicyApprovalAndRejection/{PolicyId}", response_model=list[dict])
+async def PolicyApprovalAndRejection(PolicyId: UUID, 
+                                     session: AsyncSession = Depends(get_session), 
+                                     policy_details=Depends(access_token_bearer)):
+
+    result = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == PolicyId))
+    policy = result.scalars().first()
+
+    if not policy:
+        return JSONResponse(status_code=404, content={"message": "Policy not found"})
+
+    policy_data = {
+        "policydetails_uid": str(policy.policydetails_uid),
+        "policy_holder": policy.policy_holder,
+        "policy_name": policy.policy_name,
+        "policy_type": policy.policy_type,
+        "nominee_name": policy.nominee_name,
+        "nominee_relationship": policy.nominee_relationship,
+        "coverage": policy.coverage,
+        "settlement": policy.settlement,
+        "premium_amount": policy.premium_amount,
+        "age": policy.age,
+        "gender":policy.gender,
+        "income_range": policy.income_range,
+        "id_proof": policy.id_proof,
+        "passbook": policy.passbook,
+        "photo": policy.photo,
+        "pan_card": policy.pan_card,
+        "income_proof": policy.income_proof,
+        "nominee_address_proof": policy.nominee_address_proof,
+        "feedback": policy.feedback,
+
+    }
+    return JSONResponse(status_code=200, content={"policy": policy_data})
+
+
+@admin_router.put("/policy_approved/{PolicyId}", response_model=dict)
+async def agent_approval(PolicyId: UUID, session: AsyncSession = Depends(get_session),
+                         user_details=Depends(access_token_bearer)):
+    
+    result = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == PolicyId))
+    policy = result.scalars().first()
+
+    if not policy:
+        raise HTTPException(status_code=404, detail="Policy not found")
+
+    policy.policy_status = ApprovalStatus.approved
+
+    user_id = policy.user_id
+    user_result = await session.execute(select(usertable).where(usertable.user_id == user_id))
+    user = user_result.scalars().first()
+
+    user.policy_status = True
+
+    await session.commit()
+    return JSONResponse(status_code=200, content={"message": "Updated."})
+
+
+@admin_router.put("/policy_rejected/{PolicyId}", response_model=dict)
+async def agent_rejected(PolicyId: UUID, reason: str = Form(...),
+                         session: AsyncSession = Depends(get_session),
+                         user_details=Depends(access_token_bearer)):
+    
+    result = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == PolicyId))
+    policy = result.scalars().first()
+
+    if not reason or reason.strip() == "":
+        raise HTTPException(
+            status_code=400, detail="Please provide a reason for rejection.")
+
+    if not policy:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    policy.policy_status = ApprovalStatus.rejected
+    policy.feedback = reason
+
+    await session.commit()
+    return JSONResponse(status_code=200, content={"message": "Updated."})

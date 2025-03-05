@@ -2,6 +2,15 @@ from sqlmodel import SQLModel, Field, Column, Field, ForeignKey,Relationship
 from datetime import date, datetime
 import uuid
 import sqlalchemy.dialects.postgresql as pg
+from enum import Enum as PyEnum
+from sqlalchemy import Enum
+
+
+
+class ApprovalStatus(str, PyEnum):
+    approved = "approved"
+    processing = "processing"
+    rejected = "rejected"
 
 
 class policytable(SQLModel, table=True):
@@ -61,6 +70,11 @@ class PolicyDetails(SQLModel, table=True):
         sa_column=Column(pg.UUID, ForeignKey("agenttable.agent_id"), nullable=False)
     )
 
+    policy_id: uuid.UUID = Field(
+        sa_column=Column(pg.UUID, ForeignKey("policytable.policy_uid"), nullable=False)
+    )
+
+    policy_holder: str = Field(nullable=False)
     policy_name: str = Field(nullable=False)
     policy_type: str = Field(nullable=False)
     nominee_name: str = Field(nullable=False)
@@ -68,19 +82,21 @@ class PolicyDetails(SQLModel, table=True):
     coverage: str = Field(nullable=False)
     settlement: str = Field(nullable=False)
     premium_amount: str = Field(nullable=False)
-    monthly_amount: str = Field(nullable=False)
+    monthly_amount: float = Field(nullable=False)
     age: str = Field(nullable=False)
     income_range: str = Field(nullable=False)
+    gender: str = Field(nullable=True)
 
-    id_proof: bool = Field(default=False)
-    passbook: bool = Field(default=False)
-    photo: bool = Field(default=False)
-    pan_card: bool = Field(default=False)
-    income_proof: bool = Field(default=False)
-    nominee_address_proof: bool = Field(default=False)
+    id_proof: str = Field(default=None, nullable=True)
+    passbook: str = Field(default=None, nullable=True)
+    photo: str = Field(default=None, nullable=True)
+    pan_card: str = Field(default=None, nullable=True)
+    income_proof: str = Field(default=None, nullable=True)
+    nominee_address_proof: str = Field(default=None, nullable=True)
 
     feedback: str = Field(default="", nullable=True)
-    policy_status: bool = Field(default=False) 
+    policy_status: ApprovalStatus = Field(sa_column=Column(Enum(ApprovalStatus), default=ApprovalStatus.processing))
+
     payment_status: bool = Field(default=False)
     date_of_payment: datetime = Field(default=None, nullable=True)
 

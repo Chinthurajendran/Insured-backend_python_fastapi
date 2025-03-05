@@ -6,7 +6,8 @@ import uuid
 import logging
 from pathlib import Path
 import random
-
+from fastapi.exceptions import HTTPException
+from fastapi import Request, status
 
 password_context= CryptContext(
     schemes=['bcrypt']
@@ -20,6 +21,7 @@ def verify_password(password,hash):
     return password_context.verify(password,hash)
 
 ACCESS_TOKEN_EXPIRY = 3600
+
 
 def create_access_token(user_data:dict,expiry:timedelta=None,refresh :bool= False):
     payload = {}
@@ -67,10 +69,12 @@ def decode_token(token: str):
         return token_data
     except ExpiredSignatureError:
         logging.exception("Signature has expired.")
-        return None  # or handle token refresh logic here
+        return None
     except jwt.PyJWTError as e:
         logging.exception(e)
         return None  # corrected typo
+    
+
 
     
 

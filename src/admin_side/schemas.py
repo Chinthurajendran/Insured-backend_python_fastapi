@@ -28,7 +28,6 @@ class PolicyCreateResponse(BaseModel):
 
 
 class PolicyCreateRequest(BaseModel):
-    policy_id: str
     policy_name: str
     policy_type: str
     id_proof: bool = False
