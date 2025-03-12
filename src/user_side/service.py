@@ -3,8 +3,8 @@ from .schemas import*
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from datetime import datetime
-from src.utils import generate_passwd_hash,UPLOAD_DIR
-from fastapi import UploadFile,File
+from src.utils import generate_passwd_hash,UPLOAD_DIR,random_code
+from fastapi import UploadFile,File,HTTPException,status
 import logging
 import aiofiles
 from uuid import UUID
@@ -12,6 +12,7 @@ import traceback
 from dotenv import load_dotenv
 import os
 import boto3
+from src.admin_side.models import*
 
 load_dotenv()
 
@@ -125,3 +126,102 @@ class UserService:
                 traceback.print_exc()
                 return {"error": str(e)}
 
+
+    async def PolicyCreation(self, user_data: PolicyRegistration, 
+                                policyId, 
+                                userId,
+                                id_proof: UploadFile,
+                                passbook: UploadFile,
+                                income_proof: UploadFile,
+                                photo: UploadFile,
+                                pan_card: UploadFile,
+                                nominee_address_proof: UploadFile,
+                                session: AsyncSession):
+        try:
+            async def upload_to_s3(file: UploadFile, folder_name: str) -> str:
+                file_path = f"{folder_name}/{file.filename}"
+                s3_client.upload_fileobj(file.file, BUCKET_NAME, file_path)
+                file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
+                return file_url
+
+            code = random_code()
+            
+            folder_name = f"User/PolicyDocuments/EUPC{code}"
+
+            id_proof_url = await upload_to_s3(id_proof, folder_name) if id_proof else None
+            passbook_url = await upload_to_s3(passbook, folder_name) if passbook else None
+            income_proof_url = await upload_to_s3(income_proof, folder_name) if income_proof else None
+            photo_url = await upload_to_s3(photo, folder_name) if photo else None
+            pan_card_url = await upload_to_s3(pan_card, folder_name) if pan_card else None
+            nominee_address_proof_url = await upload_to_s3(nominee_address_proof, folder_name) if nominee_address_proof else None
+
+            policy_result = await session.execute(select(policytable).where(policytable.policy_uid == policyId))
+            policys = policy_result.scalars().first()
+
+            users_result = await session.execute(select(usertable).where(usertable.user_id == userId))
+            users = users_result.scalars().first()
+            create_at = datetime.utcnow()
+            update_at = datetime.utcnow()
+            date_of_payment = datetime.utcnow()
+            coverage = policys.coverage
+            print("ppppppppppppppp",coverage)
+            settlement = policys.settlement
+            premium_amount = float(policys.premium_amount)  
+
+            dob = users.date_of_birth
+            today = date.today()
+            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+            r = 0.06  
+            n = 12  
+            t = int(coverage) - age 
+
+            if t > 0: 
+                monthly_payment = (premium_amount * (r / n)) / (1 - pow(1 + (r / n), -n * t))
+            else:
+                monthly_payment = premium_amount / 12  
+
+            new_policy = PolicyDetails(
+                user_id=users.user_id,
+                policy_id=policys.policy_uid,
+                policy_holder=users.username,
+                email = users.email,
+                gender = users.gender,
+                phone = users.phone,
+                marital_status = users.marital_status,
+                city = users.city,
+                policy_name=policys.policy_name,
+                policy_type=policys.policy_type,
+                nominee_name=user_data.nominee_name,
+                nominee_relationship=user_data.nominee_relationship,
+                coverage=policys.coverage,
+                settlement=policys.settlement,
+                premium_amount=policys.premium_amount,
+                income_range=policys.income_range,
+                monthly_amount=monthly_payment,
+                age=str(age),
+                date_of_birth = users.date_of_birth,
+                id_proof=id_proof_url,
+                passbook=passbook_url,
+                photo=photo_url,
+                pan_card=pan_card_url,
+                income_proof=income_proof_url,
+                nominee_address_proof=nominee_address_proof_url,
+                date_of_payment=date_of_payment,
+                create_at=create_at,
+                update_at=update_at
+            )
+
+            session.add(new_policy)
+            await session.flush() 
+            await session.commit()
+
+            return {"message": "Profile updated successfully"}
+
+        except Exception as e:
+            await session.rollback()
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"message": f"An error occurred: {str(e)}"}
+            )

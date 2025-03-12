@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status,Form,UploadFile, File
+from fastapi import APIRouter, Depends, status, Form, UploadFile, File
 from .schemas import *
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.db.database import get_session
@@ -20,7 +20,9 @@ from typing import Optional
 from typing import List
 from src.admin_side.models import policytable
 from math import pow
-
+from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+from src.mail import mail_config
+from src.utils import generate_passwd_hash
 
 auth_router = APIRouter()
 user_service = UserService()
@@ -108,6 +110,75 @@ async def login_user(login_data: UserLoginModel, session: AsyncSession = Depends
         detail="Invalid Email  or Password"
     )
 
+
+@auth_router.post('/password-recovery')
+async def password_recovery(user_email: Passwordrecovery,
+                            session: AsyncSession = Depends(get_session)):
+
+    email = user_email.email
+
+    user = await user_service.exist_email(email, session)
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    result = await session.execute(select(usertable).where(usertable.email == email))
+    user = result.scalars().first()
+
+    if user.block_status:
+        raise HTTPException(status_code=403, detail="User is blocked")
+
+    reset_link = f"http://localhost:5173/Resetpassword"
+
+    message = MessageSchema(
+        subject="Password Reset Request",
+        recipients=[email],
+        body=(
+            f"Hello {user.username},\n\n"
+            f"You requested a password reset. Click the link below to reset your password:\n\n"
+            f"{reset_link}\n\n"
+            f"If you didn't request this, please ignore this email.\n\n"
+            f"Best regards,\nYour Support Team"
+        ),
+        subtype="plain"
+    )
+
+    fm = FastMail(mail_config)
+    try:
+        await fm.send_message(message)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail="Failed to send password reset email")
+
+    return JSONResponse(status_code=200, content={"message": "Password recovery email sent successfully",
+                                                  'email_id': str(email)})
+
+
+@auth_router.post('/passwordreset')
+async def password_reset(user_data: UserLoginModel, session: AsyncSession = Depends(get_session)):
+    email = user_data.email
+    password = user_data.password
+    
+    result = await session.execute(select(usertable).where(usertable.email == email))
+    user = result.scalars().first()
+    
+    hashed_password = generate_passwd_hash(password)
+
+    user.password = hashed_password
+    session.add(user)
+
+    try:
+        await session.commit()
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to reset password")
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "message": "Password reset successful",
+        }
+    )
 
 def verify_google_token(token: str):
 
@@ -219,7 +290,6 @@ async def logout_agent(
     return JSONResponse(status_code=200, content={"message": "User logged out successfully."})
 
 
-
 @auth_router.get("/user_profile/{userId}", response_model=list[dict])
 async def user_profile(userId: UUID, session: AsyncSession = Depends(get_session), agent_details=Depends(access_token_bearer)):
     result = await session.execute(select(usertable).where(usertable.user_id == userId))
@@ -259,14 +329,14 @@ async def update_profile(userId: UUID,
         date_of_birth = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
     except ValueError:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid date format, expected YYYY-MM-DD"
         )
 
     user_exists = await user_service.exist_user_id(userId, session)
     if not user_exists:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
 
@@ -288,7 +358,7 @@ async def update_profile(userId: UUID,
 
 @auth_router.get("/listpolicy/{userId}", response_model=dict)
 async def listpolicy(
-    userId: UUID, 
+    userId: UUID,
     session: AsyncSession = Depends(get_session),
     user_details=Depends(access_token_bearer)
 ):
@@ -302,9 +372,7 @@ async def listpolicy(
     if not user.profile_status:
         return JSONResponse(status_code=400, content={"message": "Profile is not updated"})
 
-    return JSONResponse(status_code=200,content={"message": "Profile is not updated"})
-        
-
+    return JSONResponse(status_code=200, content={"message": "Profile is not updated"})
 
 
 @auth_router.get("/policydetails/{userId}", response_model=dict)
@@ -317,17 +385,15 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
     if not user:
         return JSONResponse(status_code=404, content={"message": "Agent not found"})
 
-
     dob = user.date_of_birth
     income = user.annual_income
 
     print("User's Income:", income)
 
-
     today = date.today()
-    age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+    age = today.year - dob.year - \
+        ((today.month, today.day) < (dob.month, dob.day))
     print(f"User ID: {userId}, Age: {age}")
-
 
     policies_result = await session.execute(select(policytable).where(policytable.income_range == income))
     policies = policies_result.scalars().all()
@@ -335,29 +401,30 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
     matching_policies = []
     for policy in policies:
         try:
-            min_age, max_age = map(int, policy.age_group.split('-'))  
+            min_age, max_age = map(int, policy.age_group.split('-'))
             if min_age <= age <= max_age:
 
                 policy_id = str(policy.policy_uid)
                 coverage = policy.coverage
                 settlement = policy.settlement
-                premium_amount = float(policy.premium_amount)  
+                premium_amount = float(policy.premium_amount)
 
-                r = 0.06 
-                n = 12  
-                t = int(coverage) - age 
+                r = 0.06
+                n = 12
+                t = int(coverage) - age
 
                 if t > 0:  # Ensure valid term
-                    monthly_payment = (premium_amount * (r / n)) / (1 - pow(1 + (r / n), -n * t))
+                    monthly_payment = (premium_amount * (r / n)) / \
+                        (1 - pow(1 + (r / n), -n * t))
                 else:
-                    monthly_payment = premium_amount / 12 
+                    monthly_payment = premium_amount / 12
 
                 matching_policies.append({
                     "policy_id": policy_id,
                     "coverage": coverage,
                     "settlement": settlement,
                     "premium_amount": premium_amount,
-                    "monthly_payment": round(monthly_payment, 2), 
+                    "monthly_payment": round(monthly_payment, 2),
                 })
         except ValueError:
             print(f"Invalid age group format: {policy.age_group}")
@@ -367,4 +434,76 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
     return JSONResponse(status_code=200, content={"matching_policies": matching_policies})
 
 
+@auth_router.get("/policydocument/{policyId}",response_model=PolicyDetails)
+async def user_policy_list(
+    policyId: UUID,
+    session: AsyncSession = Depends(get_session),
+    user_details=Depends(access_token_bearer)
+):
+    policies_result = await session.execute(
+        select(
+            policytable.policy_name,
+            policytable.policy_type,
+            policytable.id_proof,
+            policytable.passbook,
+            policytable.photo,
+            policytable.pan_card,
+            policytable.income_proof,
+            policytable.nominee_address_proof,
+            policytable.coverage,
+            policytable.settlement,
+            policytable.premium_amount,
+            policytable.income_range,
+        ).where(policytable.policy_uid == policyId)
+    )
+    policies = policies_result.first()
 
+    policy_dict = dict(policies._mapping)
+
+    if policy_dict:
+        return JSONResponse(
+            status_code=200,
+            content={
+                "message": "Policy details retrieved successfully",
+                "policy": policy_dict,
+            },
+        )
+    else:
+        raise HTTPException(status_code=404, detail="Policy not found")
+    
+
+@auth_router.post("/policyregistration/{policyId}/{userId}")
+async def policy_registration(
+    policyId: UUID,
+    userId: UUID,
+    nomineeName: str = Form(...),
+    nomineeRelation: str = Form(...),
+    id_proof: Optional[UploadFile] = File(None),
+    passbook: Optional[UploadFile] = File(None),
+    income_proof: Optional[UploadFile] = File(None),
+    photo: Optional[UploadFile] = File(None),
+    pan_card: Optional[UploadFile] = File(None),
+    nominee_address_proof: Optional[UploadFile] = File(None),
+    session: AsyncSession = Depends(get_session),
+    user_details=Depends(access_token_bearer),
+):
+
+    policy_register = PolicyRegistration(
+        nominee_name=nomineeName,
+        nominee_relationship=nomineeRelation,
+    )
+
+    update_user = await user_service.PolicyCreation(
+        policy_register, policyId, userId, id_proof, passbook, income_proof, photo, pan_card, nominee_address_proof, session
+    )
+
+    if not update_user:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Policy creation failed. Please try again later.",
+        )
+
+    return JSONResponse(
+        status_code=200,
+        content={"message": "Policy details retrieved successfully"},
+    )

@@ -67,7 +67,7 @@ class PolicyDetails(SQLModel, table=True):
     )
     
     agent_id: uuid.UUID = Field(
-        sa_column=Column(pg.UUID, ForeignKey("agenttable.agent_id"), nullable=False)
+        sa_column=Column(pg.UUID, ForeignKey("agenttable.agent_id"), nullable=True)
     )
 
     policy_id: uuid.UUID = Field(
@@ -84,8 +84,13 @@ class PolicyDetails(SQLModel, table=True):
     premium_amount: str = Field(nullable=False)
     monthly_amount: float = Field(nullable=False)
     age: str = Field(nullable=False)
+    date_of_birth: date = Field(nullable=True)
     income_range: str = Field(nullable=False)
     gender: str = Field(nullable=True)
+    email: str = Field(index=True)
+    phone: str = Field(nullable=True)
+    marital_status: str = Field(nullable=True)
+    city: str = Field(max_length=100,nullable=True)
 
     id_proof: str = Field(default=None, nullable=True)
     passbook: str = Field(default=None, nullable=True)

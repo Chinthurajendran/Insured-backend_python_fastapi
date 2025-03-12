@@ -322,7 +322,6 @@ async def new_customer(
             nominee_relationship=nomineeRelation,
         )
 
-        # Create new user
         new_user = await agent_service.create_newuser(new_user_data, session)
         if not new_user:
             raise HTTPException(
@@ -330,7 +329,6 @@ async def new_customer(
                 detail={"message": "User creation failed. Please try again later."}
             )
 
-        # Create policy for the existing user
         agent_data = ExistingUserPolicyRequest(
             email=email,
             policy_name=insurancePlan,
@@ -347,7 +345,7 @@ async def new_customer(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={"message": "Policy creation failed. Please try again later."}
             )
-
+        
         return JSONResponse(status_code=200, content={"message": "Policy Submitted to admin"})
 
     except Exception as e:
@@ -417,3 +415,177 @@ async def Agent_profile_update(agentID: UUID,
     update_user = await agent_service.profile_update(agent_data, agentID, image, session)
 
     return JSONResponse(status_code=200, content={"message": "Profile updated successfully"})
+
+
+
+@agent_router.get("/Policy_list/{PolicyId}", response_model=dict)
+async def agent_policy_list(PolicyId: UUID,session: AsyncSession = Depends(get_session),
+                          user_details=Depends(access_token_bearer)):
+    try:
+        result = await session.execute(
+            select(
+                PolicyDetails.policy_holder,
+                PolicyDetails.policy_name, 
+                PolicyDetails.policy_type, PolicyDetails.nominee_name,
+                PolicyDetails.nominee_relationship, PolicyDetails.premium_amount,
+                PolicyDetails.coverage, PolicyDetails.date_of_birth,
+                PolicyDetails.income_range, PolicyDetails.gender,
+                PolicyDetails.feedback,PolicyDetails.id_proof,
+                PolicyDetails.passbook,PolicyDetails.photo,
+                PolicyDetails.pan_card,PolicyDetails.income_proof,
+                PolicyDetails.nominee_address_proof,PolicyDetails.email
+                ,PolicyDetails.phone,PolicyDetails.marital_status,
+                PolicyDetails.city,
+            ).where(PolicyDetails.policydetails_uid == PolicyId)
+        )
+
+        policies = result.fetchone()
+        if not policies:
+            return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"message": "Policy not found"})
+        
+
+        policies_data = {
+            "policy_holder": policies.policy_holder,
+            "policy_name": policies.policy_name,
+            "policy_type": policies.policy_type,
+            "nominee_name": policies.nominee_name,
+            "email": policies.email,
+            "phone": policies.phone,
+            "marital_status": policies.marital_status,
+            "city": policies.city,
+            "date_of_birth": policies.date_of_birth.isoformat() if policies.date_of_birth else None,
+            "nominee_relationship": policies.nominee_relationship,
+            "premium_amount": policies.premium_amount,
+            "coverage": policies.coverage,
+            "income_range": policies.income_range,
+            "gender": policies.gender,
+            "feedback": policies.feedback,
+            "id_proof": policies.id_proof,
+            "passbook": policies.passbook,
+            "photo": policies.photo,
+            "pan_card": policies.pan_card,
+            "income_proof": policies.income_proof,
+            "nominee_address_proof": policies.nominee_address_proof,
+            }
+
+        return JSONResponse(status_code=200, content={"policies": policies_data})
+
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching policies: {str(e)}"
+        )
+    
+
+
+
+@agent_router.put("/policyupdate/{PolicyId}")
+async def policyupdates(
+    PolicyId: UUID,
+    email: EmailStr = Form(...),
+    name: str = Form(...),
+    phone: str = Form(...),
+    dob: str = Form(...),
+    gender: str = Form(...),
+    city: str = Form(...),
+    maritalStatus: str = Form(...),
+    income: str = Form(...),
+    insurancePlan: str = Form(...),
+    insuranceType: str = Form(...),
+    nomineeName: str = Form(...),
+    nomineeRelation: str = Form(...),
+    id_proof: Optional[UploadFile] = File(None),
+    passbook: Optional[UploadFile] = File(None),
+    income_proof: Optional[UploadFile] = File(None),
+    photo: Optional[UploadFile] = File(None),
+    pan_card: Optional[UploadFile] = File(None),
+    nominee_address_proof: Optional[UploadFile] = File(None),
+    session: AsyncSession = Depends(get_session),
+    user_details=Depends(access_token_bearer)
+):
+    # Print form data
+    print(f"Agent ID: {PolicyId}")
+    print(f"Email: {email}")
+    print(f"Name: {name}")
+    print(f"Phone: {phone}")
+    print(f"DOB: {dob}")
+    print(f"Gender: {gender}")
+    print(f"City: {city}")
+    print(f"Marital Status: {maritalStatus}")
+    print(f"Income: {income}")
+    print(f"Insurance Plan: {insurancePlan}")
+    print(f"Insurance Type: {insuranceType}")
+    print(f"Nominee Name: {nomineeName}")
+    print(f"Nominee Relation: {nomineeRelation}")
+
+    # Print file details if uploaded
+    files = {
+        "ID Proof": id_proof,
+        "Passbook": passbook,
+        "Income Proof": income_proof,
+        "Photo": photo,
+        "PAN Card": pan_card,
+        "Nominee Address Proof": nominee_address_proof,
+    }
+
+    for file_name, file in files.items():
+        if file:
+            print(f"{file_name}: {file.filename}")
+    try:
+        date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date()
+
+        user_exists_with_email = await user_service.exist_email(email, session)
+        print("eeeeeeeeeeeeeeeee",user_exists_with_email)
+        if not user_exists_with_email:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail={"message": "Email not found"}
+            )
+
+        new_user_data = NewUserPolicyRequest(
+            username=name,
+            email=email,
+            phone=phone,
+            date_of_birth=date_of_birth,
+            gender=gender,
+            city=city,
+            marital_status=maritalStatus,
+            annual_income=income,
+            policy_name=insurancePlan,
+            policy_type=insuranceType,
+            nominee_name=nomineeName,
+            nominee_relationship=nomineeRelation,
+        )
+
+        # new_user = await agent_service.create_newuser(new_user_data, session)
+        # if not new_user:
+        #     raise HTTPException(
+        #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+        #         detail={"message": "User creation failed. Please try again later."}
+        #     )
+
+        # agent_data = ExistingUserPolicyRequest(
+        #     email=email,
+        #     policy_name=insurancePlan,
+        #     policy_type=insuranceType,
+        #     nominee_name=nomineeName,
+        #     nominee_relationship=nomineeRelation
+        # )
+
+        update_user = await agent_service.Policyupdate(
+            new_user_data, PolicyId, id_proof, passbook, income_proof, photo, pan_card, nominee_address_proof, session
+        )
+        if not update_user:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"message": "Policy creation failed. Please try again later."}
+            )
+        
+        return JSONResponse(status_code=200, content={"message": "Policy Submitted to admin"})
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"message": f"An error occurred: {str(e)}"}
+        )

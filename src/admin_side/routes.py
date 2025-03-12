@@ -37,60 +37,6 @@ admin_service = AdminService()
 REFRESH_TOKEN_EXPIRY = 2
 
 
-# @admin_router.post("/admin_login")
-# async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depends(get_session)):
-#     username = login_data.username
-#     password = login_data.password
-
-#     if username == 'Admin' and password == 'Admin':
-#         admin_access_token = create_access_token(
-#             user_data={
-#                 'admin_username': username,
-#                 'admin_role': 'admin'
-#             }
-#         )
-
-#         admin_refresh_token = create_access_token(
-#             user_data={
-#                 'admin_username': username,
-#                 'admin_role': 'admin'
-#             },
-#             refresh=True,
-#             expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
-#         )
-
-#         if isinstance(admin_access_token, bytes):
-#             admin_access_token = admin_access_token.decode("utf-8")
-#         if isinstance(admin_refresh_token, bytes):
-#             admin_refresh_token = admin_refresh_token.decode("utf-8")
-
-
-#         response.set_cookie(
-#             key="refresh_token",
-#             value=admin_refresh_token,
-#             httponly=True,  # Prevents JavaScript access
-#             secure=True,  # Only send over HTTPS
-#             samesite="Strict"  # Mitigates CSRF
-#         )
-
-#         return JSONResponse(
-#             status_code=status.HTTP_200_OK,
-#             content={
-#                 "message": "Login successful",
-#                 "admin_access_token": admin_access_token,
-#                 "admin_refresh_token": admin_refresh_token,
-#                 "admin_username": username,
-#                 'admin_role': 'admin'
-#             }
-#         )
-
-#     raise HTTPException(
-#         status_code=status.HTTP_403_FORBIDDEN,
-#         detail="Invalid Email or Password"
-#     )
-
-
-
 @admin_router.post("/admin_login")
 async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depends(get_session)):
     username = login_data.username
@@ -98,13 +44,19 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
 
     if username == 'Admin' and password == 'Admin':
         admin_access_token = create_access_token(
-            user_data={'admin_username': username, 'admin_role': 'admin'}
+            user_data={
+                'admin_username': username,
+                'admin_role': 'admin'
+            }
         )
 
         admin_refresh_token = create_access_token(
-            user_data={'admin_username': username, 'admin_role': 'admin'},
+            user_data={
+                'admin_username': username,
+                'admin_role': 'admin'
+            },
             refresh=True,
-            expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)  # Adjust the refresh token expiry as needed
+            expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
         )
 
         if isinstance(admin_access_token, bytes):
@@ -112,10 +64,7 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
         if isinstance(admin_refresh_token, bytes):
             admin_refresh_token = admin_refresh_token.decode("utf-8")
 
-        logging.info(f"Admin Access Token: {admin_access_token}")
-        logging.info(f"Admin Refresh Token: {admin_refresh_token}")
-
-        response = JSONResponse(
+        return JSONResponse(
             status_code=status.HTTP_200_OK,
             content={
                 "message": "Login successful",
@@ -125,17 +74,6 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
                 'admin_role': 'admin'
             }
         )
-
-        # Ensure cookies attributes are correctly set
-        response.set_cookie(
-            key="refresh_token",
-            value=admin_refresh_token,
-            httponly=True,
-            secure=False,  # Set to True in production
-            samesite="Lax"
-        )
-
-        return response
 
     raise HTTPException(
         status_code=status.HTTP_403_FORBIDDEN,
@@ -629,7 +567,7 @@ async def block_user(userId: UUID,
 
 
 
-@admin_router.get("/Policy_list", response_model=dict)
+@admin_router.get("/PolicyDetails_list", response_model=dict)
 async def policy_list(session: AsyncSession = Depends(get_session),
                           user_details=Depends(access_token_bearer)):
 
@@ -642,20 +580,19 @@ async def policy_list(session: AsyncSession = Depends(get_session),
                 PolicyDetails.settlement, PolicyDetails.premium_amount,
                 PolicyDetails.monthly_amount, PolicyDetails.age,
                 PolicyDetails.income_range, PolicyDetails.policy_status,
+                PolicyDetails.payment_status,PolicyDetails.feedback,
             )
         )
 
         policies = result.all()
 
-        if not policies:
-            return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"message": "Policy not found"})
         
         policies_data = [dict(policy._asdict()) for policy in policies]
         for policy in policies_data:
             policy['policydetails_uid'] = str(policy['policydetails_uid'])
             policy['user_id'] = str(policy['user_id'])
             policy['agent_id'] = str(policy['agent_id'])
-            policy['policy_status'] = policy['policy_status'].value  # Convert enum to string
+            policy['policy_status'] = policy['policy_status'].value 
 
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
@@ -714,6 +651,7 @@ async def agent_approval(PolicyId: UUID, session: AsyncSession = Depends(get_ses
         raise HTTPException(status_code=404, detail="Policy not found")
 
     policy.policy_status = ApprovalStatus.approved
+    policy.payment_status = True
 
     user_id = policy.user_id
     user_result = await session.execute(select(usertable).where(usertable.user_id == user_id))
@@ -745,3 +683,5 @@ async def agent_rejected(PolicyId: UUID, reason: str = Form(...),
 
     await session.commit()
     return JSONResponse(status_code=200, content={"message": "Updated."})
+
+

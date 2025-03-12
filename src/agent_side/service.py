@@ -19,6 +19,8 @@ import string
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from src.utils import generate_passwd_hash,UPLOAD_DIR
 from src.mail import mail_config
+from botocore.exceptions import ClientError
+import boto3
 
 load_dotenv()
 
@@ -154,7 +156,6 @@ class AgentService:
                                 nominee_address_proof: UploadFile,
                                 session: AsyncSession):
         try:
-            print("111111111111111111")
             async def upload_to_s3(file: UploadFile, folder_name: str) -> str:
                 file_path = f"{folder_name}/{file.filename}"
                 s3_client.upload_fileobj(file.file, BUCKET_NAME, file_path)
@@ -171,16 +172,14 @@ class AgentService:
             photo_url = await upload_to_s3(photo, folder_name) if photo else None
             pan_card_url = await upload_to_s3(pan_card, folder_name) if pan_card else None
             nominee_address_proof_url = await upload_to_s3(nominee_address_proof, folder_name) if nominee_address_proof else None
-            print("2222222222222222")
+
             policy_result = await session.execute(select(policytable).where(policytable.policy_name == agent_data.policy_type))
             policys = policy_result.scalars().first()
             users_result = await session.execute(select(usertable).where(usertable.email == agent_data.email))
             users = users_result.scalars().first()
-            print("0000000000000",policys)
             create_at = datetime.utcnow()
             update_at = datetime.utcnow()
             date_of_payment = datetime.utcnow()
-            print("333333333333333333")
             coverage = policys.coverage
             settlement = policys.settlement
             premium_amount = float(policys.premium_amount)  
@@ -197,13 +196,17 @@ class AgentService:
                 monthly_payment = (premium_amount * (r / n)) / (1 - pow(1 + (r / n), -n * t))
             else:
                 monthly_payment = premium_amount / 12  
-            print("444444444444444444")
+
             new_policy = PolicyDetails(
                 user_id=users.user_id,
                 agent_id=agentID,
                 policy_id=policys.policy_uid,
                 policy_holder=users.username,
+                email = users.email,
                 gender = users.gender,
+                phone = users.phone,
+                marital_status = users.marital_status,
+                city = users.city,
                 policy_name=agent_data.policy_name,
                 policy_type=agent_data.policy_type,
                 nominee_name=agent_data.nominee_name,
@@ -214,6 +217,7 @@ class AgentService:
                 income_range=policys.income_range,
                 monthly_amount=monthly_payment,
                 age=str(age),
+                date_of_birth = users.date_of_birth,
                 id_proof=id_proof_url,
                 passbook=passbook_url,
                 photo=photo_url,
@@ -232,7 +236,6 @@ class AgentService:
             return {"message": "Profile updated successfully"}
 
         except Exception as e:
-            print("88888888888888888")
             await session.rollback()
             traceback.print_exc()
             raise HTTPException(
@@ -244,7 +247,6 @@ class AgentService:
         create_at = datetime.utcnow()
         update_at = datetime.utcnow()
 
-        # Function to generate a strong 10-character password
         def generate_strong_password(length=10):
             alphabet = string.ascii_letters + string.digits + string.punctuation
             return ''.join(secrets.choice(alphabet) for _ in range(length))
@@ -255,7 +257,7 @@ class AgentService:
         new_user = usertable(
             username=user_details.username,
             email=user_details.email,
-            password=hashed_password,  # Store hashed password
+            password=hashed_password, 
             gender=user_details.gender,
             phone=user_details.phone,
             date_of_birth=user_details.date_of_birth,
@@ -270,7 +272,6 @@ class AgentService:
         await session.commit()
         await session.refresh(new_user)
 
-        # Email message with login credentials
         message = MessageSchema(
             subject="Your Account Details",
             recipients=[user_details.email],
@@ -291,3 +292,174 @@ class AgentService:
         except Exception as e:
             print("Error sending email:", e)
             return {"error": "User created, but email failed to send."}
+        
+
+    # async def delete_folder_contents(self,bucket_name, folder_name):
+    #     try:
+    #         paginator = s3_client.get_paginator("list_objects_v2")
+    #         operation_params = {"Bucket": bucket_name, "Prefix": f"{folder_name}/"}
+    #         print("opppppp",operation_params)
+    #         for page in paginator.paginate(**operation_params):
+    #             print("111111111111",page)
+    #             if "Contents" in page:
+    #                 file_keys = [{"Key": obj["Key"]} for obj in page["Contents"]]
+    #                 print("eeeeeee",file_keys)
+
+    #                 # Delete the files in bulk
+    #                 s3_client.delete_objects(Bucket=bucket_name, Delete={"Objects": file_keys})
+    #                 print(f"Deleted {len(file_keys)} files from '{folder_name}' in '{bucket_name}'.")
+
+    #         return True
+    #     except ClientError as e:
+    #         print(f"Error deleting folder contents: {e.response['Error']['Message']}")
+    #         return False
+        
+
+
+    async def delete_folder_contents(self, bucket_name, folder_name):
+        try:
+
+            # List all objects in the folder
+            response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=folder_name)
+            print("opppppp",response)
+
+            if 'Contents' not in response:
+                print(f"No files found in '{folder_name}' in '{bucket_name}'.")
+                return True  # No files to delete
+
+            # Extract object keys
+            file_keys = [{'Key': obj['Key']} for obj in response['Contents']]
+
+            # Delete the objects
+            s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': file_keys})
+
+            print(f"Deleted {len(file_keys)} files from '{folder_name}' in '{bucket_name}'.")
+            return True
+        except ClientError as e:
+            print(f"Error deleting folder contents: {e.response['Error']['Message']}")
+            return False
+
+    async def upload_to_s3_bucket(self,file: UploadFile, folder_name: str) -> str:
+        try:
+            file_path = f"{folder_name}/{file.filename}"
+            s3_client.upload_fileobj(file.file, BUCKET_NAME, file_path)
+            file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
+            return file_url
+        except ClientError as e:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail=f"Failed to upload file '{file.filename}' to S3: {str(e)}")
+            
+        
+
+    async def Policyupdate(self, agent_data: NewUserPolicyRequest, 
+                                PolicyId, 
+                                id_proof: UploadFile,
+                                passbook: UploadFile,
+                                income_proof: UploadFile,
+                                photo: UploadFile,
+                                pan_card: UploadFile,
+                                nominee_address_proof: UploadFile,
+                                session: AsyncSession):
+        try:
+
+            PolicyDetails_reault = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == PolicyId))
+            policysdetails = PolicyDetails_reault.scalars().first()
+
+            def extract_folder_name(url):
+                parts = url.split("/")
+                folder_name = "/".join(parts[3:-1])
+                return folder_name
+
+            url = policysdetails.id_proof
+            folder_name = extract_folder_name(url)
+            print("fffffffffffffffffffff",folder_name)
+
+            deletion = await self.delete_folder_contents(BUCKET_NAME, folder_name)
+            print("dddddddddddddddd",deletion)
+            if not deletion:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to delete folder '{folder_name}' from bucket '{BUCKET_NAME}'."
+                )
+
+            # code = random_code()
+            
+            # folder_name = f"Agent/PolicyDocuments/EUPC{code}"
+
+            id_proof_url = await self.upload_to_s3_bucket(id_proof, folder_name) if id_proof else None
+            passbook_url = await self.upload_to_s3_bucket(passbook, folder_name) if passbook else None
+            income_proof_url = await self.upload_to_s3_bucket(income_proof, folder_name) if income_proof else None
+            photo_url = await self.upload_to_s3_bucket(photo, folder_name) if photo else None
+            pan_card_url = await self.upload_to_s3_bucket(pan_card, folder_name) if pan_card else None
+            nominee_address_proof_url = await self.upload_to_s3_bucket(nominee_address_proof, folder_name) if nominee_address_proof else None
+
+            policy_result = await session.execute(select(policytable).where(policytable.policy_name == agent_data.policy_type))
+            policys = policy_result.scalars().first()
+            users_result = await session.execute(select(usertable).where(usertable.email == agent_data.email))
+            users = users_result.scalars().first()
+            create_at = datetime.utcnow()
+            update_at = datetime.utcnow()
+            date_of_payment = datetime.utcnow()
+            coverage = policys.coverage
+            settlement = policys.settlement
+            premium_amount = float(policys.premium_amount)  
+
+            dob = users.date_of_birth
+            today = date.today()
+            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+
+            r = 0.06  
+            n = 12  
+            t = int(coverage) - age 
+
+            if t > 0: 
+                monthly_payment = (premium_amount * (r / n)) / (1 - pow(1 + (r / n), -n * t))
+            else:
+                monthly_payment = premium_amount / 12  
+
+            new_policy = PolicyDetails(
+                user_id=users.user_id,
+                agent_id=agentID,
+                policy_id=policys.policy_uid,
+                policy_holder=users.username,
+                email = users.email,
+                gender = users.gender,
+                phone = users.phone,
+                marital_status = users.marital_status,
+                city = users.city,
+                policy_name=agent_data.policy_name,
+                policy_type=agent_data.policy_type,
+                nominee_name=agent_data.nominee_name,
+                nominee_relationship=agent_data.nominee_relationship,
+                coverage=policys.coverage,
+                settlement=policys.settlement,
+                premium_amount=policys.premium_amount,
+                income_range=policys.income_range,
+                policy_status = ApprovalStatus.processing,
+                monthly_amount=monthly_payment,
+                age=str(age),
+                date_of_birth = users.date_of_birth,
+                id_proof=id_proof_url,
+                passbook=passbook_url,
+                photo=photo_url,
+                pan_card=pan_card_url,
+                income_proof=income_proof_url,
+                nominee_address_proof=nominee_address_proof_url,
+                date_of_payment=date_of_payment,
+                create_at=create_at,
+                update_at=update_at
+            )
+
+            await session.commit()
+
+            return {"message": "Profile updated successfully"}
+
+        except Exception as e:
+            await session.rollback()
+            traceback.print_exc()
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"message": f"An error occurred: {str(e)}"}
+            )
+            
