@@ -164,7 +164,6 @@ class UserService:
             update_at = datetime.utcnow()
             date_of_payment = datetime.utcnow()
             coverage = policys.coverage
-            print("ppppppppppppppp",coverage)
             settlement = policys.settlement
             premium_amount = float(policys.premium_amount)  
 

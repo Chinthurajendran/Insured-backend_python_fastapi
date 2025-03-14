@@ -64,3 +64,10 @@ class AgentProfileCreateRequest(BaseModel):
     gender: str
     city: str
     date_of_birth: date  
+
+class AgentPasswordrecovery (BaseModel):
+    agentID: str
+
+class RestpasswordModel(BaseModel):
+    agentid: str
+    password:str

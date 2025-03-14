@@ -23,6 +23,7 @@ from math import pow
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from src.mail import mail_config
 from src.utils import generate_passwd_hash
+from src.admin_side.models import*
 
 auth_router = APIRouter()
 user_service = UserService()
@@ -378,7 +379,6 @@ async def listpolicy(
 @auth_router.get("/policydetails/{userId}", response_model=dict)
 async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_session),
                            user_details=Depends(access_token_bearer)):
-
     result = await session.execute(select(usertable).where(usertable.user_id == userId))
     user = result.scalars().first()
 
@@ -388,12 +388,9 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
     dob = user.date_of_birth
     income = user.annual_income
 
-    print("User's Income:", income)
-
     today = date.today()
     age = today.year - dob.year - \
         ((today.month, today.day) < (dob.month, dob.day))
-    print(f"User ID: {userId}, Age: {age}")
 
     policies_result = await session.execute(select(policytable).where(policytable.income_range == income))
     policies = policies_result.scalars().all()
@@ -402,13 +399,14 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
     for policy in policies:
         try:
             min_age, max_age = map(int, policy.age_group.split('-'))
+            print(min_age)
+            print(max_age)
+            print(age)
             if min_age <= age <= max_age:
-
                 policy_id = str(policy.policy_uid)
                 coverage = policy.coverage
                 settlement = policy.settlement
                 premium_amount = float(policy.premium_amount)
-
                 r = 0.06
                 n = 12
                 t = int(coverage) - age
@@ -428,7 +426,7 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
                 })
         except ValueError:
             print(f"Invalid age group format: {policy.age_group}")
-
+        
     if not matching_policies:
         return JSONResponse(status_code=404, content={"message": "No matching policies found"})
     return JSONResponse(status_code=200, content={"matching_policies": matching_policies})
@@ -507,3 +505,29 @@ async def policy_registration(
         status_code=200,
         content={"message": "Policy details retrieved successfully"},
     )
+
+@auth_router.get("/PolicyinfoDetails/{PolicyId}", response_model=list[dict])
+async def policyinfo_details(PolicyId: UUID,session: AsyncSession = Depends(get_session),
+                          user_details=Depends(access_token_bearer)):
+
+    try:
+        result = await session.execute(
+            select(
+                policyinfo.policyinfo_name,
+                policyinfo.photo, 
+                policyinfo.titledescription,
+                policyinfo.description, 
+            ).where(policyinfo.policyinfo_uid == PolicyId)
+        )
+
+        policies = result.all()
+
+        policies_data = [dict(zip(result.keys(), map(str, policy))) for policy in policies]
+
+        return JSONResponse(status_code=200, content={"policies": policies_data})
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching policies: {str(e)}"
+        )

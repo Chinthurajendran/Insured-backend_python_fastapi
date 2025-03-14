@@ -1,5 +1,5 @@
 from .schemas import *
-from fastapi import APIRouter, status, Depends, Form
+from fastapi import APIRouter, status, Depends, Form ,UploadFile,File
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.db.database import get_session
 from fastapi.responses import JSONResponse
@@ -260,7 +260,6 @@ async def edit_policy(policyId: UUID, policy_data: PolicyediteRequest, session: 
         if not policys:
             raise HTTPException(status_code=404, detail="Policy not found")
 
-        policys.policy_id = policy_data.policy_id
         policys.policy_name = policy_data.policy_name
         policys.policy_type = policy_data.policy_type
         policys.id_proof = policy_data.id_proof
@@ -685,3 +684,53 @@ async def agent_rejected(PolicyId: UUID, reason: str = Form(...),
     return JSONResponse(status_code=200, content={"message": "Updated."})
 
 
+@admin_router.post("/policyinfocreate", response_model=dict)
+async def PolicyInfoCreate(
+    policyinfo_name: str = Form(...),
+    titledescription: str = Form(...),
+    description: str = Form(...),
+    photo: Optional[UploadFile] = File(None),
+    session: AsyncSession = Depends(get_session),
+    user_details=Depends(access_token_bearer)
+):
+    try:
+        policy_info = {
+            "policyinfo_name": policyinfo_name,
+            "titledescription": titledescription,
+            "description": description
+        }
+        created_policy = await admin_service.create_policy_info(policy_info, photo, session)
+        return JSONResponse(status_code=200, content={"message": "Policy created successfully."})
+    
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"An error occurred: {str(e)}")
+
+
+@admin_router.get("/Policyinfo_list", response_model=list[dict])
+async def policyinfo_list(session: AsyncSession = Depends(get_session),
+                          user_details=Depends(access_token_bearer)):
+
+    try:
+        result = await session.execute(
+            select(
+                policyinfo.policyinfo_uid, 
+                policyinfo.policyinfo_name,
+                policyinfo.photo, 
+                policyinfo.titledescription,
+                policyinfo.description, 
+                policyinfo.delete_status
+            )
+        )
+
+        policies = result.all()
+
+        policies_data = [dict(zip(result.keys(), map(str, policy))) for policy in policies]
+
+        return JSONResponse(status_code=200, content={"policies": policies_data})
+
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching policies: {str(e)}"
+        )

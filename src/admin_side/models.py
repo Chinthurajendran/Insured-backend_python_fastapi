@@ -114,3 +114,30 @@ class PolicyDetails(SQLModel, table=True):
 
     def __repr__(self):
         return f"<PolicyDetails {self.policy_name}>"
+    
+
+
+class policyinfo(SQLModel, table=True):
+    __tablename__ = "policyinfo"
+    policyinfo_uid: uuid.UUID = Field(
+        sa_column=Column(
+            pg.UUID,
+            nullable=False,
+            primary_key=True,
+            default=uuid.uuid4
+        )
+    )
+    policyinfo_name: str = Field(unique=True, nullable=False)
+    photo: str = Field(default=None, nullable=True)
+    titledescription: str = Field(default="", nullable=True)
+    description: str = Field(default="", nullable=True)
+    role: str = Field(default="admin", max_length=20,nullable=True)
+
+    delete_status: bool = Field(default=False)
+    create_at: datetime = Field(sa_column=Column(
+        pg.TIMESTAMP, default=datetime.utcnow))
+    update_at: datetime = Field(sa_column=Column(
+        pg.TIMESTAMP, default=datetime.utcnow))
+
+    def __repr__(self):
+        return f"<policytable {self.policyinfo_name}>"

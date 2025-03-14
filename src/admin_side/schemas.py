@@ -45,7 +45,6 @@ class PolicyCreateRequest(BaseModel):
 
 
 class PolicyediteRequest(BaseModel):
-    policy_id: str
     policy_name: str
     policy_type: str
     id_proof: bool = False
@@ -60,3 +59,9 @@ class PolicyediteRequest(BaseModel):
     age_group: str
     income_range: str
     description: str = ""
+
+
+class PolicyeinfocreateRequest(BaseModel):
+    policyinfo_name: str
+    titledescription: str
+    description: str

@@ -21,6 +21,7 @@ from src.admin_side.models import *
 from src.user_side.models import *
 from src.user_side.service import UserService
 from typing import List
+from src.utils import generate_passwd_hash
 
 agent_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
@@ -298,6 +299,7 @@ async def new_customer(
     user_details=Depends(access_token_bearer)
 ):
     try:
+    
         date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date()
 
         user_exists_with_email = await user_service.exist_email(email, session)
@@ -504,39 +506,10 @@ async def policyupdates(
     session: AsyncSession = Depends(get_session),
     user_details=Depends(access_token_bearer)
 ):
-    # Print form data
-    print(f"Agent ID: {PolicyId}")
-    print(f"Email: {email}")
-    print(f"Name: {name}")
-    print(f"Phone: {phone}")
-    print(f"DOB: {dob}")
-    print(f"Gender: {gender}")
-    print(f"City: {city}")
-    print(f"Marital Status: {maritalStatus}")
-    print(f"Income: {income}")
-    print(f"Insurance Plan: {insurancePlan}")
-    print(f"Insurance Type: {insuranceType}")
-    print(f"Nominee Name: {nomineeName}")
-    print(f"Nominee Relation: {nomineeRelation}")
-
-    # Print file details if uploaded
-    files = {
-        "ID Proof": id_proof,
-        "Passbook": passbook,
-        "Income Proof": income_proof,
-        "Photo": photo,
-        "PAN Card": pan_card,
-        "Nominee Address Proof": nominee_address_proof,
-    }
-
-    for file_name, file in files.items():
-        if file:
-            print(f"{file_name}: {file.filename}")
     try:
         date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date()
 
         user_exists_with_email = await user_service.exist_email(email, session)
-        print("eeeeeeeeeeeeeeeee",user_exists_with_email)
         if not user_exists_with_email:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -589,3 +562,70 @@ async def policyupdates(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"message": f"An error occurred: {str(e)}"}
         )
+
+
+@agent_router.post('/password-recovery')
+async def password_recovery(agent_id: AgentPasswordrecovery,
+                            session: AsyncSession = Depends(get_session)):
+    agentid = agent_id.agentID
+
+    agent = await agent_service.exist_agent_user_id(agentid, session)
+    if not agent:
+        raise HTTPException(status_code=404, detail="Agent not found")
+    
+    result = await session.execute(select(AgentTable).where(AgentTable.agent_userid == agentid))
+    agentinfo = result.scalars().first()
+    await session.commit()
+
+    reset_link = f"http://localhost:5173/AgentResetpassword"
+
+    message = MessageSchema(
+        subject="Password Reset Request",
+        recipients=[agentinfo.agent_email],
+        body=(
+            f"Hello {agentinfo.agent_name},\n\n"
+            f"You requested a password reset. Click the link below to reset your password:\n\n"
+            f"{reset_link}\n\n"
+            f"If you didn't request this, please ignore this email.\n\n"
+            f"Best regards,\nYour Support Team"
+        ),
+        subtype="plain"
+    )
+
+    fm = FastMail(mail_config)
+    try:
+        await fm.send_message(message)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail="Failed to send password reset email")
+
+    return JSONResponse(status_code=200, content={"message": "Password recovery email sent successfully",
+                                                  'agentID': str(agentid)})
+
+
+@agent_router.post('/passwordreset')
+async def password_reset(agent_data: RestpasswordModel, session: AsyncSession = Depends(get_session)):
+    agent_id = agent_data.agentid
+    password = agent_data.password
+    
+    result = await session.execute(select(AgentTable).where(AgentTable.agent_userid == agent_id))
+    agent = result.scalars().first()
+    await session.commit()
+    
+    hashed_password = generate_passwd_hash(password)
+
+    agent.password = hashed_password
+    session.add(agent)
+
+    try:
+        await session.commit()
+    except Exception as e:
+        await session.rollback()
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to reset password")
+
+    return JSONResponse(
+        status_code=status.HTTP_200_OK,
+        content={
+            "message": "Password reset successful",
+        }
+    )

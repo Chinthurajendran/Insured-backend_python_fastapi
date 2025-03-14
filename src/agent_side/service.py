@@ -60,6 +60,11 @@ class AgentService:
 
         return True if user is not None else False
     
+    async def exist_agent_user_id(self,agent_id:str,session:AsyncSession):
+        user = await self.get_agent_by_agentid(agent_id,session)
+
+        return True if user is not None else False
+    
 
     async def exist_email(self, agentid: str, session: AsyncSession):
         agents = await self.get_agent_by_agentid(agentid, session)
@@ -292,28 +297,6 @@ class AgentService:
         except Exception as e:
             print("Error sending email:", e)
             return {"error": "User created, but email failed to send."}
-        
-
-    # async def delete_folder_contents(self,bucket_name, folder_name):
-    #     try:
-    #         paginator = s3_client.get_paginator("list_objects_v2")
-    #         operation_params = {"Bucket": bucket_name, "Prefix": f"{folder_name}/"}
-    #         print("opppppp",operation_params)
-    #         for page in paginator.paginate(**operation_params):
-    #             print("111111111111",page)
-    #             if "Contents" in page:
-    #                 file_keys = [{"Key": obj["Key"]} for obj in page["Contents"]]
-    #                 print("eeeeeee",file_keys)
-
-    #                 # Delete the files in bulk
-    #                 s3_client.delete_objects(Bucket=bucket_name, Delete={"Objects": file_keys})
-    #                 print(f"Deleted {len(file_keys)} files from '{folder_name}' in '{bucket_name}'.")
-
-    #         return True
-    #     except ClientError as e:
-    #         print(f"Error deleting folder contents: {e.response['Error']['Message']}")
-    #         return False
-        
 
 
     async def delete_folder_contents(self, bucket_name, folder_name):
@@ -373,19 +356,14 @@ class AgentService:
 
             url = policysdetails.id_proof
             folder_name = extract_folder_name(url)
-            print("fffffffffffffffffffff",folder_name)
 
             deletion = await self.delete_folder_contents(BUCKET_NAME, folder_name)
-            print("dddddddddddddddd",deletion)
             if not deletion:
                 raise HTTPException(
                     status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                     detail=f"Failed to delete folder '{folder_name}' from bucket '{BUCKET_NAME}'."
                 )
 
-            # code = random_code()
-            
-            # folder_name = f"Agent/PolicyDocuments/EUPC{code}"
 
             id_proof_url = await self.upload_to_s3_bucket(id_proof, folder_name) if id_proof else None
             passbook_url = await self.upload_to_s3_bucket(passbook, folder_name) if passbook else None
@@ -396,16 +374,13 @@ class AgentService:
 
             policy_result = await session.execute(select(policytable).where(policytable.policy_name == agent_data.policy_type))
             policys = policy_result.scalars().first()
-            users_result = await session.execute(select(usertable).where(usertable.email == agent_data.email))
-            users = users_result.scalars().first()
-            create_at = datetime.utcnow()
             update_at = datetime.utcnow()
             date_of_payment = datetime.utcnow()
             coverage = policys.coverage
             settlement = policys.settlement
             premium_amount = float(policys.premium_amount)  
 
-            dob = users.date_of_birth
+            dob = agent_data.date_of_birth
             today = date.today()
             age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
 
@@ -418,38 +393,29 @@ class AgentService:
             else:
                 monthly_payment = premium_amount / 12  
 
-            new_policy = PolicyDetails(
-                user_id=users.user_id,
-                agent_id=agentID,
-                policy_id=policys.policy_uid,
-                policy_holder=users.username,
-                email = users.email,
-                gender = users.gender,
-                phone = users.phone,
-                marital_status = users.marital_status,
-                city = users.city,
-                policy_name=agent_data.policy_name,
-                policy_type=agent_data.policy_type,
-                nominee_name=agent_data.nominee_name,
-                nominee_relationship=agent_data.nominee_relationship,
-                coverage=policys.coverage,
-                settlement=policys.settlement,
-                premium_amount=policys.premium_amount,
-                income_range=policys.income_range,
-                policy_status = ApprovalStatus.processing,
-                monthly_amount=monthly_payment,
-                age=str(age),
-                date_of_birth = users.date_of_birth,
-                id_proof=id_proof_url,
-                passbook=passbook_url,
-                photo=photo_url,
-                pan_card=pan_card_url,
-                income_proof=income_proof_url,
-                nominee_address_proof=nominee_address_proof_url,
-                date_of_payment=date_of_payment,
-                create_at=create_at,
-                update_at=update_at
-            )
+            policysdetails.policy_holder=agent_data.username
+            policysdetails.email=agent_data.email
+            policysdetails.gender=agent_data.gender
+            policysdetails.phone=agent_data.phone
+            policysdetails.marital_status=agent_data.marital_status
+            policysdetails.city=agent_data.city
+            policysdetails.policy_name=agent_data.policy_name
+            policysdetails.policy_type=agent_data.policy_type
+            policysdetails.nominee_name=agent_data.nominee_name
+            policysdetails.nominee_relationship=agent_data.nominee_relationship
+            policysdetails.income_range=agent_data.annual_income
+            policysdetails.monthly_amount=monthly_payment
+            policysdetails.age=str(age)
+            policysdetails.date_of_birth=agent_data.date_of_birth
+            policysdetails.id_proof=id_proof_url
+            policysdetails.passbook=passbook_url
+            policysdetails.photo=photo_url
+            policysdetails.pan_card=pan_card_url
+            policysdetails.income_proof=income_proof_url
+            policysdetails.nominee_address_proof=nominee_address_proof_url
+            policysdetails.date_of_payment=date_of_payment
+            policysdetails.policy_status=ApprovalStatus.processing
+            policysdetails.update_at=update_at
 
             await session.commit()
 
