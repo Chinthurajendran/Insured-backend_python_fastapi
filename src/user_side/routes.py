@@ -23,7 +23,7 @@ from math import pow
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from src.mail import mail_config
 from src.utils import generate_passwd_hash
-from src.admin_side.models import*
+from src.admin_side.models import *
 
 auth_router = APIRouter()
 user_service = UserService()
@@ -159,20 +159,32 @@ async def password_recovery(user_email: Passwordrecovery,
 async def password_reset(user_data: UserLoginModel, session: AsyncSession = Depends(get_session)):
     email = user_data.email
     password = user_data.password
-    
+
     result = await session.execute(select(usertable).where(usertable.email == email))
     user = result.scalars().first()
-    
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+
     hashed_password = generate_passwd_hash(password)
 
     user.password = hashed_password
+    user_id = user.user_id
+    message = "Password is reset"
+    notification = await user_service.notification_update(user_id, message, session)
+
+    if not notification:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Failed to create notification")
+
     session.add(user)
 
     try:
         await session.commit()
     except Exception as e:
         await session.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to reset password")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to reset password")
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
@@ -180,6 +192,7 @@ async def password_reset(user_data: UserLoginModel, session: AsyncSession = Depe
             "message": "Password reset successful",
         }
     )
+
 
 def verify_google_token(token: str):
 
@@ -261,6 +274,7 @@ async def google_login(auth_data: GoogleAuthModel, session: AsyncSession = Depen
 
 @auth_router.post("/user_refresh_token")
 async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer())):
+    print("111111111111111")
     expiry_timestamp = token_details["exp"]
     if datetime.fromtimestamp(expiry_timestamp) > datetime.now():
         new_access_token = create_access_token(
@@ -426,13 +440,13 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
                 })
         except ValueError:
             print(f"Invalid age group format: {policy.age_group}")
-        
+
     if not matching_policies:
         return JSONResponse(status_code=404, content={"message": "No matching policies found"})
     return JSONResponse(status_code=200, content={"matching_policies": matching_policies})
 
 
-@auth_router.get("/policydocument/{policyId}",response_model=PolicyDetails)
+@auth_router.get("/policydocument/{policyId}", response_model=PolicyDetails)
 async def user_policy_list(
     policyId: UUID,
     session: AsyncSession = Depends(get_session),
@@ -452,6 +466,7 @@ async def user_policy_list(
             policytable.settlement,
             policytable.premium_amount,
             policytable.income_range,
+            policytable.description,
         ).where(policytable.policy_uid == policyId)
     )
     policies = policies_result.first()
@@ -468,7 +483,7 @@ async def user_policy_list(
         )
     else:
         raise HTTPException(status_code=404, detail="Policy not found")
-    
+
 
 @auth_router.post("/policyregistration/{policyId}/{userId}")
 async def policy_registration(
@@ -506,23 +521,58 @@ async def policy_registration(
         content={"message": "Policy details retrieved successfully"},
     )
 
+
 @auth_router.get("/PolicyinfoDetails/{PolicyId}", response_model=list[dict])
-async def policyinfo_details(PolicyId: UUID,session: AsyncSession = Depends(get_session),
-                          user_details=Depends(access_token_bearer)):
+async def policyinfo_details(PolicyId: UUID, session: AsyncSession = Depends(get_session)):
 
     try:
         result = await session.execute(
             select(
                 policyinfo.policyinfo_name,
-                policyinfo.photo, 
+                policyinfo.photo,
                 policyinfo.titledescription,
-                policyinfo.description, 
+                policyinfo.description,
             ).where(policyinfo.policyinfo_uid == PolicyId)
         )
 
         policies = result.all()
 
-        policies_data = [dict(zip(result.keys(), map(str, policy))) for policy in policies]
+        policies_data = [dict(zip(result.keys(), map(str, policy)))
+                         for policy in policies]
+        return JSONResponse(status_code=200, content={"policies": policies_data})
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching policies: {str(e)}"
+        )
+
+
+@auth_router.get("/PolicyDetails_list", response_model=dict)
+async def policy_list(session: AsyncSession = Depends(get_session),
+                      user_details=Depends(access_token_bearer)):
+
+    try:
+        result = await session.execute(
+            select(
+                PolicyDetails.policydetails_uid, PolicyDetails.user_id,
+                PolicyDetails.agent_id, PolicyDetails.policy_holder,
+                PolicyDetails.policy_type, PolicyDetails.coverage,
+                PolicyDetails.settlement, PolicyDetails.premium_amount,
+                PolicyDetails.monthly_amount, PolicyDetails.age,
+                PolicyDetails.income_range, PolicyDetails.policy_status,
+                PolicyDetails.payment_status, PolicyDetails.feedback,
+            )
+        )
+
+        policies = result.all()
+
+        policies_data = [dict(policy._asdict()) for policy in policies]
+        for policy in policies_data:
+            policy['policydetails_uid'] = str(policy['policydetails_uid'])
+            policy['user_id'] = str(policy['user_id'])
+            policy['agent_id'] = str(policy['agent_id'])
+            policy['policy_status'] = policy['policy_status'].value
 
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
@@ -530,4 +580,118 @@ async def policyinfo_details(PolicyId: UUID,session: AsyncSession = Depends(get_
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching policies: {str(e)}"
+        )
+
+
+@auth_router.get("/Policyinfo_list", response_model=list[dict])
+async def policyinfo_list(session: AsyncSession = Depends(get_session)):
+
+    try:
+        result = await session.execute(
+            select(
+                policyinfo.policyinfo_uid,
+                policyinfo.policyinfo_name,
+                policyinfo.photo,
+                policyinfo.titledescription,
+                policyinfo.description,
+                policyinfo.delete_status
+            )
+        )
+
+        policies = result.all()
+
+        policies_data = [dict(zip(result.keys(), map(str, policy)))
+                         for policy in policies]
+
+        return JSONResponse(status_code=200, content={"policies": policies_data})
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching policies: {str(e)}"
+        )
+
+
+@auth_router.get("/UserPolicyStatus/{userId}")
+async def Userpolicystatus(userId: UUID, session: AsyncSession = Depends(get_session)):
+    try:
+        result = await session.execute(
+            select(PolicyDetails.policy_status)
+            .where(
+                PolicyDetails.user_id == userId,
+                PolicyDetails.policy_status.in_(["approved", "processing"])
+            )
+        )
+
+        policies = result.scalars().all()
+
+        if not policies:
+            return JSONResponse(status_code=200, content={"policies": False})
+
+        return JSONResponse(status_code=200, content={"policies": True})
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching policies: {str(e)}"
+        )
+
+
+@auth_router.get("/Getnotification/{userId}")
+async def notification(userId: UUID, session: AsyncSession = Depends(get_session)):
+    try:
+        result = await session.execute(
+            select(
+                Notification.notification_uid,
+                Notification.message,
+                Notification.create_at
+            ).where((Notification.user_id == userId) & (Notification.delete_status == False))
+        )
+        messages = result.fetchall()
+
+        print("Raw Messages:", messages)
+        serialized_messages = [
+            {
+                "notification_uid": str(row.notification_uid),
+                "message": row.message,
+                "create_at": row.create_at.isoformat()  
+            }
+            for row in messages
+        ]
+
+        print("Serialized Messages:", serialized_messages)
+
+        return JSONResponse(status_code=200, content={"message": serialized_messages})
+
+    except Exception as e:
+        print(f"Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching notifications: {str(e)}"
+        )
+
+@auth_router.put("/Clearnotification/{userId}")
+async def clearnotification(userId: UUID, session: AsyncSession = Depends(get_session)):
+    try:
+        result = await session.execute(
+            select(Notification).where(Notification.user_id == userId)
+        )
+        messages = result.scalars().all()
+
+        if not messages:
+            return JSONResponse(status_code=404, content={"message": "No notifications found"})
+        
+        for msg in messages:
+            msg.delete_status = True
+
+        await session.flush()
+        await session.commit()
+
+        return JSONResponse(status_code=200, content={"message": "Deleted successfully"})
+
+    except Exception as e:
+        print(f"Error: {e}") 
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while deleting notifications: {str(e)}"
         )

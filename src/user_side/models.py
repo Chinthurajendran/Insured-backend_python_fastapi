@@ -1,4 +1,4 @@
-from sqlmodel import SQLModel, Field, Column
+from sqlmodel import SQLModel, Field, Column,ForeignKey
 from datetime import date, datetime
 import uuid
 import sqlalchemy.dialects.postgresql as pg
@@ -35,3 +35,24 @@ class usertable(SQLModel, table=True):
 
     def __repr__(self):
         return f"<UserTable {self.username}>"
+
+
+class Notification(SQLModel, table=True):
+    __tablename__ = "notification"
+
+    notification_uid: uuid.UUID = Field(
+        sa_column=Column(pg.UUID, primary_key=True, nullable=False, default=uuid.uuid4)
+    )
+    user_id: uuid.UUID = Field(
+        sa_column=Column(pg.UUID, ForeignKey("usertable.user_id"), nullable=False)
+    )
+    message: str = Field(default="", nullable=False)
+    role: str = Field(default="user", max_length=20, nullable=False)
+    delete_status: bool = Field(default=False)
+    create_at: datetime = Field(sa_column=Column(
+        pg.TIMESTAMP, default=datetime.utcnow))
+    update_at: datetime = Field(sa_column=Column(
+        pg.TIMESTAMP, default=datetime.utcnow))
+
+    def __repr__(self):
+        return f"<Notification {self.message}>"

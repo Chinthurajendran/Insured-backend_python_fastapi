@@ -15,6 +15,10 @@ import boto3
 from botocore.exceptions import ClientError
 from datetime import datetime
 from typing import Optional
+import asyncio
+from sqlalchemy import update
+import mimetypes
+import pytz
 
 
 load_dotenv()
@@ -52,6 +56,11 @@ class AdminService:
 
         code = random_code()
 
+        ist = pytz.timezone("Asia/Kolkata")
+        utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        local_time = utc_time.astimezone(ist)
+        local_time_naive = local_time.replace(tzinfo=None)
+
         new_policy = policytable(
             policy_id=f"PL{code}",
             policy_name=policy_data.policy_name.lower(),
@@ -68,8 +77,8 @@ class AdminService:
             age_group=policy_data.age_group,
             income_range=policy_data.income_range,
             description=policy_data.description,
-            create_at=datetime.utcnow(),
-            update_at=datetime.utcnow()
+            create_at=local_time_naive,
+            update_at=local_time_naive
         )
 
         session.add(new_policy)
@@ -79,17 +88,114 @@ class AdminService:
         return new_policy
 
 
-    async def upload_to_s3_bucket(self,file: UploadFile, folder_name: str) -> str:
+    # async def upload_to_s3_bucket(self,file: UploadFile, folder_name: str) -> str:
+    #     try:
+    #         file_path = f"{folder_name}/{file.filename}"
+    #         s3_client.upload_fileobj(file.file, BUCKET_NAME, file_path)
+    #         file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
+    #         return file_url
+    #     except ClientError as e:
+    #         raise HTTPException(
+    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+    #             detail=f"Failed to upload file '{file.filename}' to S3: {str(e)}")
+        
+
+    async def upload_to_s3_bucket(self, file: UploadFile, folder_name: str) -> str:
         try:
             file_path = f"{folder_name}/{file.filename}"
-            s3_client.upload_fileobj(file.file, BUCKET_NAME, file_path)
+            content_type, _ = mimetypes.guess_type(file.filename)  # Detect MIME type
+            content_type = content_type or "application/octet-stream"  # Default if unknown
+
+            def upload():
+                """ Upload file asynchronously using boto3 in a separate thread. """
+                s3_client.put_object(
+                    Bucket=BUCKET_NAME,
+                    Key=file_path,
+                    Body=file.file,
+                    ContentType=content_type
+                )
+
+            await asyncio.to_thread(upload)  # Run blocking call in a separate thread
+
             file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
             return file_url
+
         except ClientError as e:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-                detail=f"Failed to upload file '{file.filename}' to S3: {str(e)}")
+                detail=f"Failed to upload file '{file.filename}' to S3: {e.response['Error']['Message']}"
+            )
 
+    # async def delete_folder_contents(self, bucket_name, folder_name):
+    #     try:
+
+    #         response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=folder_name)
+
+    #         if 'Contents' not in response:
+    #             print(f"No files found in '{folder_name}' in '{bucket_name}'.")
+    #             return True
+
+    #         file_keys = [{'Key': obj['Key']} for obj in response['Contents']]
+
+
+    #         s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': file_keys})
+
+    #         print(f"Deleted {len(file_keys)} files from '{folder_name}' in '{bucket_name}'.")
+    #         return True
+    #     except ClientError as e:
+    #         print(f"Error deleting folder contents: {e.response['Error']['Message']}")
+    #         return False
+        
+
+    async def delete_folder_contents(self, bucket_name: str, folder_name: str) -> bool:
+        try:
+            print(f"Deleting files from '{folder_name}' in '{bucket_name}'...")
+
+            def list_objects():
+                """ List all objects in the given folder (handles pagination). """
+                files = []
+                continuation_token = None
+
+                while True:
+                    params = {"Bucket": bucket_name, "Prefix": folder_name}
+                    if continuation_token:
+                        params["ContinuationToken"] = continuation_token
+
+                    response = s3_client.list_objects_v2(**params)
+
+                    if "Contents" in response:
+                        files.extend(response["Contents"])
+
+                    if not response.get("IsTruncated"):
+                        break
+
+                    continuation_token = response.get("NextContinuationToken")
+
+                return files
+
+            def delete_files(files):
+                """ Delete files in batches of 1000 (AWS limit). """
+                for i in range(0, len(files), 1000):
+                    batch = files[i : i + 1000]
+                    file_keys = [{"Key": obj["Key"]} for obj in batch]
+                    s3_client.delete_objects(Bucket=bucket_name, Delete={"Objects": file_keys})
+
+            # Run both list and delete operations in a separate thread (since boto3 is blocking)
+            files_to_delete = await asyncio.to_thread(list_objects)
+
+            if not files_to_delete:
+                print(f"No files found in '{folder_name}' in '{bucket_name}'.")
+                return True
+
+            await asyncio.to_thread(delete_files, files_to_delete)
+
+            print(f"Successfully deleted {len(files_to_delete)} files from '{folder_name}'.")
+            return True
+
+        except ClientError as e:
+            print(f"Error deleting folder contents: {e.response['Error']['Message']}")
+            return False
+        
 
     async def create_policy_info(
         self,
@@ -102,13 +208,18 @@ class AdminService:
 
             photo_url = await self.upload_to_s3_bucket(photo, folder_name) if photo else None
 
+            ist = pytz.timezone("Asia/Kolkata")
+            utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+            local_time = utc_time.astimezone(ist)
+            local_time_naive = local_time.replace(tzinfo=None)
+
             new_policy = policyinfo(
                 policyinfo_name=policy_info['policyinfo_name'],
                 photo=photo_url, 
                 titledescription=policy_info['titledescription'],
                 description=policy_info['description'],
-                create_at=datetime.utcnow(),
-                update_at=datetime.utcnow()
+                create_at=local_time_naive,
+                update_at=local_time_naive
             )
 
             session.add(new_policy)
@@ -118,3 +229,84 @@ class AdminService:
         except Exception as e:
             await session.rollback()
             raise Exception(f"Error creating policy info: {str(e)}")
+
+
+    async def policy_info_update(
+        self,
+        PolicyId,
+        policy_infos: PolicyeinfocreateRequest,
+        photos: Optional[UploadFile],
+        session: AsyncSession
+    ):
+        photo_url = None
+        try:
+            if photos is not None:
+                def extract_folder_name(url):
+                    return "/".join(url.split("/")[3:-1])
+                result = await session.execute(
+                    select(policyinfo.photo).where(policyinfo.policyinfo_uid == PolicyId)
+                )
+                existing_photo_url = result.scalars().first()
+                
+                if not existing_photo_url:
+                    raise HTTPException(
+                        status_code=status.HTTP_404_NOT_FOUND, 
+                        detail="Policy not found"
+                    )
+                folder_name = extract_folder_name(existing_photo_url)
+
+
+                deletion = await self.delete_folder_contents(BUCKET_NAME, folder_name)
+                if not deletion:
+                    raise HTTPException(
+                        status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                        detail=f"Failed to delete folder '{folder_name}' from bucket '{BUCKET_NAME}'."
+                    )
+                photo_url = await self.upload_to_s3_bucket(photos, folder_name) if photos else None
+
+            ist = pytz.timezone("Asia/Kolkata")
+            utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+            local_time = utc_time.astimezone(ist)
+            local_time_naive = local_time.replace(tzinfo=None)
+
+            update_stmt = (
+                update(policyinfo)
+                .where(policyinfo.policyinfo_uid == PolicyId)
+                .values(
+                    policyinfo_name=policy_infos["policyinfo_name"],
+                    titledescription=policy_infos["titledescription"],
+                    description=policy_infos["description"],
+                    photo=photo_url if photo_url else policyinfo.photo,
+                    update_at=local_time_naive,
+                )
+            )
+
+            await session.execute(update_stmt)
+            await session.commit()
+
+            return {"message": "Policy Info updated successfully"}
+        except Exception as e:
+            await session.rollback()
+            raise Exception(f"Error creating policy info: {str(e)}")
+        
+
+    async def S3_busket_delete_file(self, existing_url, session: AsyncSession):
+        try:
+            def extract_folder_name(url):
+                return "/".join(url.split("/")[3:-1])
+            
+            
+            folder_name = extract_folder_name(existing_url)
+
+            deletion = await self.delete_folder_contents(BUCKET_NAME, folder_name)
+            if not deletion:
+                raise HTTPException(
+                    status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                    detail=f"Failed to delete folder '{folder_name}' from bucket '{BUCKET_NAME}'."
+                )
+            
+            return True
+        
+        except Exception as e:
+            await session.rollback()
+            raise Exception(f"Error deleting policy info: {str(e)}")

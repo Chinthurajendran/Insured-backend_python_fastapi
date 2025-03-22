@@ -16,10 +16,8 @@ class TokenBearer(HTTPBearer):
         creds = await super().__call__(request)
         token = creds.credentials
 
-        print("qqqqqqqqqqqqqqqqqq",token)
         token_data = decode_token(token)
-        print("wwwwwwwwwwwwwwwwwww",token_data)
-        
+
         if not self.token_valid(token):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
@@ -48,14 +46,6 @@ class TokenBearer(HTTPBearer):
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied! Only user are allowed."
             )
-    
-    # def decode_token(token: str):
-    #         try:
-    #             return jwt.decode(token, 'your_secret_key', algorithms=['HS256'])
-    #         except jwt.ExpiredSignatureError:
-    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token has expired")
-    #         except jwt.InvalidTokenError:
-    #             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token")
 
 class AccessTokenBearer(TokenBearer):
     def verify_token_data(self, token_data: dict):
@@ -68,7 +58,7 @@ class AccessTokenBearer(TokenBearer):
 
 class RefreshTokenBearer(TokenBearer):
     def verify_token_data(self, token_data: dict):
-        print("ttttttttttttttttttttt",token_data)
+        print("111111111111111")
         if token_data and not token_data['refresh']:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

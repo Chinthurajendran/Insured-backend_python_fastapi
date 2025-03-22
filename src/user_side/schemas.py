@@ -28,7 +28,6 @@ class Passwordrecovery (BaseModel):
     email: str
 
 
-
 class GoogleAuthModel(BaseModel):
     token: str
 

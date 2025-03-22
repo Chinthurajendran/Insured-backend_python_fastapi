@@ -8,6 +8,10 @@ from pathlib import Path
 import random
 from fastapi.exceptions import HTTPException
 from fastapi import Request, status
+import pytz
+import jwt
+import logging
+from jwt.exceptions import ExpiredSignatureError, DecodeError, InvalidTokenError
 
 password_context= CryptContext(
     schemes=['bcrypt']
@@ -20,60 +24,52 @@ def generate_passwd_hash(password):
 def verify_password(password,hash):
     return password_context.verify(password,hash)
 
-ACCESS_TOKEN_EXPIRY = 3600
+# ACCESS_TOKEN_EXPIRY = 3600
+ACCESS_TOKEN_EXPIRY = 60
 
+ist = pytz.timezone("Asia/Kolkata")
 
-def create_access_token(user_data:dict,expiry:timedelta=None,refresh :bool= False):
+def create_access_token(user_data: dict, expiry: timedelta = None, refresh: bool = False):
+    # Get the current UTC time
+    utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+
+    # Convert UTC time to IST
+    local_time = utc_time.astimezone(ist)
+
+    # Compute expiration time correctly
+    expiration_time_ist = local_time + (expiry if expiry else timedelta(seconds=ACCESS_TOKEN_EXPIRY))
+
     payload = {}
-
     payload['user'] = user_data
-    payload['exp'] = datetime.now() + (expiry if expiry is not None else timedelta(seconds=ACCESS_TOKEN_EXPIRY))
+    payload['exp'] = expiration_time_ist.timestamp()
     payload['jti'] = str(uuid.uuid4())
     payload['refresh'] = refresh
+
+    print("Correct JWT Payload:", payload)
 
     token = jwt.encode(
         payload=payload,
         key=Config.JWT_SECRET,
         algorithm=Config.JWT_ALOGRITHM
-
     )
+
     return token
 
-
-# from jwt.exceptions import ExpiredSignatureError, DecodeError
-# def decode_token(token:str):
-#     try:
-#         token_data = jwt.decode(
-#             jwt = token,
-#             key = Config.JWT_SECRET,
-#             algorithms = Config.JWT_ALOGRITHM
-#         )
-#         return token_data
-#     except ExpiredSignatureError:
-#         logging.exception("Signature has expired.")
-#         return None  # or handle token refresh logic here
-#     except jwt.PyJWTError as e:
-#         logging.exception(e)
-#         return None
-
-
-from jwt.exceptions import ExpiredSignatureError, DecodeError
 
 def decode_token(token: str):
     try:
         token_data = jwt.decode(
-            token,  # corrected parameter name
+            token,
             key=Config.JWT_SECRET,
-            algorithms=[Config.JWT_ALOGRITHM]  # corrected to list
+            algorithms=[Config.JWT_ALOGRITHM]  # Fixed typo
         )
         return token_data
     except ExpiredSignatureError:
-        logging.exception("Signature has expired.")
+        logging.exception("Token has expired.")
         return None
-    except jwt.PyJWTError as e:
-        logging.exception(e)
-        return None  # corrected typo
-    
+    except (DecodeError, InvalidTokenError) as e:
+        logging.exception(f"Invalid token: {e}")
+        return None
 
 
     

@@ -21,6 +21,7 @@ from src.utils import generate_passwd_hash,UPLOAD_DIR
 from src.mail import mail_config
 from botocore.exceptions import ClientError
 import boto3
+import pytz
 
 load_dotenv()
 
@@ -77,8 +78,14 @@ class AgentService:
         session: AsyncSession
     ):
         agent_data_dict = agent_details.dict()
-        create_at = datetime.utcnow()
-        update_at = datetime.utcnow()
+
+        ist = pytz.timezone("Asia/Kolkata")
+        utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        local_time = utc_time.astimezone(ist)
+        local_time_naive = local_time.replace(tzinfo=None)
+
+        create_at = local_time_naive
+        update_at = local_time_naive
 
         folder_name = "Agent/"
 
@@ -182,9 +189,15 @@ class AgentService:
             policys = policy_result.scalars().first()
             users_result = await session.execute(select(usertable).where(usertable.email == agent_data.email))
             users = users_result.scalars().first()
-            create_at = datetime.utcnow()
-            update_at = datetime.utcnow()
-            date_of_payment = datetime.utcnow()
+
+            ist = pytz.timezone("Asia/Kolkata")
+            utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+            local_time = utc_time.astimezone(ist)
+            local_time_naive = local_time.replace(tzinfo=None)
+
+            create_at = local_time_naive
+            update_at = local_time_naive
+            date_of_payment = local_time_naive
             coverage = policys.coverage
             settlement = policys.settlement
             premium_amount = float(policys.premium_amount)  
@@ -249,8 +262,14 @@ class AgentService:
             )
         
     async def create_newuser(self, user_details: NewUserPolicyRequest, session: AsyncSession):
-        create_at = datetime.utcnow()
-        update_at = datetime.utcnow()
+
+        ist = pytz.timezone("Asia/Kolkata")
+        utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        local_time = utc_time.astimezone(ist)
+        local_time_naive = local_time.replace(tzinfo=None)
+
+        create_at = local_time_naive
+        update_at = local_time_naive
 
         def generate_strong_password(length=10):
             alphabet = string.ascii_letters + string.digits + string.punctuation
@@ -302,18 +321,15 @@ class AgentService:
     async def delete_folder_contents(self, bucket_name, folder_name):
         try:
 
-            # List all objects in the folder
             response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=folder_name)
-            print("opppppp",response)
 
             if 'Contents' not in response:
                 print(f"No files found in '{folder_name}' in '{bucket_name}'.")
-                return True  # No files to delete
+                return True
 
-            # Extract object keys
             file_keys = [{'Key': obj['Key']} for obj in response['Contents']]
 
-            # Delete the objects
+
             s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': file_keys})
 
             print(f"Deleted {len(file_keys)} files from '{folder_name}' in '{bucket_name}'.")
@@ -374,8 +390,14 @@ class AgentService:
 
             policy_result = await session.execute(select(policytable).where(policytable.policy_name == agent_data.policy_type))
             policys = policy_result.scalars().first()
-            update_at = datetime.utcnow()
-            date_of_payment = datetime.utcnow()
+
+            ist = pytz.timezone("Asia/Kolkata")
+            utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+            local_time = utc_time.astimezone(ist)
+            local_time_naive = local_time.replace(tzinfo=None)
+
+            update_at = local_time_naive
+            date_of_payment = local_time_naive
             coverage = policys.coverage
             settlement = policys.settlement
             premium_amount = float(policys.premium_amount)  

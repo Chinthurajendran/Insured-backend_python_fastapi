@@ -30,3 +30,4 @@ async def get_session() -> AsyncSession:
 
     async with Session() as session:
         yield session
+

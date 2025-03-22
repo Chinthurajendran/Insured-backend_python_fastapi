@@ -1,10 +1,10 @@
-from .models import usertable
-from .schemas import*
+from .models import *
+from .schemas import *
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from datetime import datetime
-from src.utils import generate_passwd_hash,UPLOAD_DIR,random_code
-from fastapi import UploadFile,File,HTTPException,status
+from src.utils import generate_passwd_hash, UPLOAD_DIR, random_code
+from fastapi import UploadFile, File, HTTPException, status
 import logging
 import aiofiles
 from uuid import UUID
@@ -12,7 +12,8 @@ import traceback
 from dotenv import load_dotenv
 import os
 import boto3
-from src.admin_side.models import*
+from src.admin_side.models import *
+import pytz
 
 load_dotenv()
 
@@ -30,57 +31,65 @@ s3_client = boto3.client(
     region_name=AWS_REGION
 )
 
+
 class UserService:
-    async def get_user_by_id(self,user_id:str,session:AsyncSession):
+    async def get_user_by_id(self, user_id: str, session: AsyncSession):
         statement = select(usertable).where(usertable.user_id == user_id)
         result = await session.exec(statement)
 
         user = result.first()
-        
+
         return user
 
-    async def get_user_by_email(self,email:str,session:AsyncSession):
+    async def get_user_by_email(self, email: str, session: AsyncSession):
         statement = select(usertable).where(usertable.email == email)
         result = await session.exec(statement)
 
         user = result.first()
-        
+
         return user
-    
-    async def get_user_by_username(self,username:str,session:AsyncSession):
+
+    async def get_user_by_username(self, username: str, session: AsyncSession):
         statement = select(usertable).where(usertable.username == username)
 
         result = await session.exec(statement)
-        user  = result.first()
+        user = result.first()
         return user
 
-    async def exist_email(self,email:str,session:AsyncSession):
-        user = await self.get_user_by_email(email,session)
+    async def exist_email(self, email: str, session: AsyncSession):
+        user = await self.get_user_by_email(email, session)
 
         return True if user is not None else False
-    
-    async def exist_username(self,username:str,session:AsyncSession):
-        user  = await self.get_user_by_username(username,session)
 
-        return True if user  is not None else False
-    
-    async def exist_user_id(self,user_id:str,session:AsyncSession):
-        user = await self.get_user_by_id(user_id,session)
+    async def exist_username(self, username: str, session: AsyncSession):
+        user = await self.get_user_by_username(username, session)
 
         return True if user is not None else False
-    
-    async def create_user(self,user_details:UserCreate,session:AsyncSession):
+
+    async def exist_user_id(self, user_id: str, session: AsyncSession):
+        user = await self.get_user_by_id(user_id, session)
+
+        return True if user is not None else False
+
+    async def create_user(self, user_details: UserCreate, session: AsyncSession):
+        
         user_data_dict = user_details.model_dump()
-        create_at = datetime.utcnow()
-        update_at = datetime.utcnow()
+
+        ist = pytz.timezone("Asia/Kolkata")
+        utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        local_time = utc_time.astimezone(ist)
+        local_time_naive = local_time.replace(tzinfo=None)
+
+        create_at = local_time_naive
+        update_at = local_time_naive
 
         new_user = usertable(
             **user_data_dict,
-            create_at = create_at,
-            update_at = update_at
+            create_at=create_at,
+            update_at=update_at
         )
         new_user.password = generate_passwd_hash(user_data_dict['password'])
- 
+
         session.add(new_user)
         await session.commit()
         await session.refresh(new_user)
@@ -90,12 +99,12 @@ class UserService:
     async def profile_update(self, user_data: ProfileCreateRequest, user_Id, image: UploadFile, session: AsyncSession):
         try:
             if image is not None:
-                    folder_name = "Users/"
+                folder_name = "Users/"
 
-                    file_path = f"{folder_name}{image.filename}"
+                file_path = f"{folder_name}{image.filename}"
 
-                    s3_client.upload_fileobj(image.file, BUCKET_NAME, file_path)
-                    file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
+                s3_client.upload_fileobj(image.file, BUCKET_NAME, file_path)
+                file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
 
             result = await session.execute(select(usertable).where(usertable.user_id == user_Id))
             user = result.scalars().first()
@@ -112,31 +121,30 @@ class UserService:
             user.marital_status = user_data.marital_status
             user.annual_income = user_data.annual_income
             if image is not None:
-                user.image = file_url 
-            user.profile_status = True 
+                user.image = file_url
+            user.profile_status = True
 
             session.add(user)
-            await session.flush() 
-            await session.commit() 
+            await session.flush()
+            await session.commit()
 
             return {"message": "Profile updated successfully"}
 
         except Exception as e:
-                await session.rollback() 
-                traceback.print_exc()
-                return {"error": str(e)}
+            await session.rollback()
+            traceback.print_exc()
+            return {"error": str(e)}
 
-
-    async def PolicyCreation(self, user_data: PolicyRegistration, 
-                                policyId, 
-                                userId,
-                                id_proof: UploadFile,
-                                passbook: UploadFile,
-                                income_proof: UploadFile,
-                                photo: UploadFile,
-                                pan_card: UploadFile,
-                                nominee_address_proof: UploadFile,
-                                session: AsyncSession):
+    async def PolicyCreation(self, user_data: PolicyRegistration,
+                             policyId,
+                             userId,
+                             id_proof: UploadFile,
+                             passbook: UploadFile,
+                             income_proof: UploadFile,
+                             photo: UploadFile,
+                             pan_card: UploadFile,
+                             nominee_address_proof: UploadFile,
+                             session: AsyncSession):
         try:
             async def upload_to_s3(file: UploadFile, folder_name: str) -> str:
                 file_path = f"{folder_name}/{file.filename}"
@@ -145,7 +153,7 @@ class UserService:
                 return file_url
 
             code = random_code()
-            
+
             folder_name = f"User/PolicyDocuments/EUPC{code}"
 
             id_proof_url = await upload_to_s3(id_proof, folder_name) if id_proof else None
@@ -160,35 +168,43 @@ class UserService:
 
             users_result = await session.execute(select(usertable).where(usertable.user_id == userId))
             users = users_result.scalars().first()
-            create_at = datetime.utcnow()
-            update_at = datetime.utcnow()
-            date_of_payment = datetime.utcnow()
+
+            ist = pytz.timezone("Asia/Kolkata")
+            utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+            local_time = utc_time.astimezone(ist)
+            local_time_naive = local_time.replace(tzinfo=None)
+
+            create_at = local_time_naive
+            update_at = local_time_naive
+            date_of_payment = local_time_naive
             coverage = policys.coverage
             settlement = policys.settlement
-            premium_amount = float(policys.premium_amount)  
+            premium_amount = float(policys.premium_amount)
 
             dob = users.date_of_birth
             today = date.today()
-            age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+            age = today.year - dob.year - \
+                ((today.month, today.day) < (dob.month, dob.day))
 
-            r = 0.06  
-            n = 12  
-            t = int(coverage) - age 
+            r = 0.06
+            n = 12
+            t = int(coverage) - age
 
-            if t > 0: 
-                monthly_payment = (premium_amount * (r / n)) / (1 - pow(1 + (r / n), -n * t))
+            if t > 0:
+                monthly_payment = (premium_amount * (r / n)) / \
+                    (1 - pow(1 + (r / n), -n * t))
             else:
-                monthly_payment = premium_amount / 12  
+                monthly_payment = premium_amount / 12
 
             new_policy = PolicyDetails(
                 user_id=users.user_id,
                 policy_id=policys.policy_uid,
                 policy_holder=users.username,
-                email = users.email,
-                gender = users.gender,
-                phone = users.phone,
-                marital_status = users.marital_status,
-                city = users.city,
+                email=users.email,
+                gender=users.gender,
+                phone=users.phone,
+                marital_status=users.marital_status,
+                city=users.city,
                 policy_name=policys.policy_name,
                 policy_type=policys.policy_type,
                 nominee_name=user_data.nominee_name,
@@ -199,7 +215,7 @@ class UserService:
                 income_range=policys.income_range,
                 monthly_amount=monthly_payment,
                 age=str(age),
-                date_of_birth = users.date_of_birth,
+                date_of_birth=users.date_of_birth,
                 id_proof=id_proof_url,
                 passbook=passbook_url,
                 photo=photo_url,
@@ -212,7 +228,7 @@ class UserService:
             )
 
             session.add(new_policy)
-            await session.flush() 
+            await session.flush()
             await session.commit()
 
             return {"message": "Profile updated successfully"}
@@ -224,3 +240,22 @@ class UserService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={"message": f"An error occurred: {str(e)}"}
             )
+
+    async def notification_update(self, userid, message, session: AsyncSession):
+
+        ist = pytz.timezone("Asia/Kolkata")
+        utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        local_time = utc_time.astimezone(ist)
+        local_time_naive = local_time.replace(tzinfo=None)
+
+        notification = Notification(
+            user_id=userid,
+            message=message,
+            create_at=local_time_naive
+        )
+
+        session.add(notification)
+        await session.commit()
+        await session.refresh(notification)
+
+        return notification

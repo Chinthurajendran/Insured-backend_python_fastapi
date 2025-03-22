@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, UploadFile, File, HTTPException, Form, Request, FastAPI
+from fastapi import APIRouter, Depends, status, UploadFile, File, HTTPException, Form, Request, FastAPI, Query
 from fastapi.responses import JSONResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 from .schemas import *
@@ -27,7 +27,7 @@ agent_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
 agent_service = AgentService()
 user_service = UserService()
-REFRESH_TOKEN_EXPIRY = 2
+REFRESH_TOKEN_EXPIRY = 86400
 
 logger = logging.getLogger(__name__)
 
@@ -174,7 +174,7 @@ async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer(
 
         if isinstance(new_access_token, bytes):
             new_access_token = new_access_token.decode('utf-8')
-        
+
         return JSONResponse(content={"access_token": new_access_token})
     raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
                         detail="Invalid or expired token")
@@ -201,8 +201,8 @@ async def policyname(
             )
         )
 
-        filed_data = filed_result.fetchall()  
-        field_keys = filed_result.keys()  
+        filed_data = filed_result.fetchall()
+        field_keys = filed_result.keys()
 
         additional_fields = [dict(zip(field_keys, row)) for row in filed_data]
 
@@ -216,7 +216,6 @@ async def policyname(
 
     except Exception as e:
         return JSONResponse(status_code=500, content={"error": str(e)})
-    
 
 
 @agent_router.post("/ExistingCustomer/{agentID}")
@@ -225,30 +224,31 @@ async def ExistingCustomer(agentID: UUID,
                            insurancePlan: str = Form(...),
                            insuranceType: str = Form(...),
                            nomineeName: str = Form(...),
-                           nomineeRelation: str = Form(...), 
+                           nomineeRelation: str = Form(...),
                            id_proof: Optional[UploadFile] = File(None),
                            passbook: Optional[UploadFile] = File(None),
                            income_proof: Optional[UploadFile] = File(None),
                            photo: Optional[UploadFile] = File(None),
                            pan_card: Optional[UploadFile] = File(None),
-                           nominee_address_proof: Optional[UploadFile] = File(None),
+                           nominee_address_proof: Optional[UploadFile] = File(
+                               None),
                            session: AsyncSession = Depends(get_session),
                            user_details=Depends(access_token_bearer)):
-    
+
     user_exists_with_email = await user_service.exist_email(email, session)
 
     if not user_exists_with_email:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
+            status_code=status.HTTP_403_FORBIDDEN,
             detail={"message": "User profile is incomplete. Please update the profile before proceeding."})
-    
+
     result = await session.execute(select(usertable).where(usertable.email == email))
     user = result.scalars().first()
     if not user.profile_status:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"message": "User profile is incomplete. Please update the profile before proceeding."})
-    
+
     agent_data = ExistingUserPolicyRequest(
         email=email,
         policy_name=insurancePlan,
@@ -259,20 +259,23 @@ async def ExistingCustomer(agentID: UUID,
 
     try:
         update_user = await agent_service.ExistingUserPolicyCreation(agent_data, agentID, id_proof, passbook, income_proof,
-                                                                      photo, pan_card, nominee_address_proof, session)
+                                                                     photo, pan_card, nominee_address_proof, session)
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"message": f"An error occurred while updating the Policy: {str(e)}"}
+            detail={
+                "message": f"An error occurred while updating the Policy: {str(e)}"}
         )
 
     if not update_user:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"message": "An error occurred while updating the Policy. Please try again later."}
+            detail={
+                "message": "An error occurred while updating the Policy. Please try again later."}
         )
 
     return JSONResponse(status_code=200, content={"message": "Policy Submitted to admin"})
+
 
 @agent_router.post("/NewCustomer/{agentID}")
 async def new_customer(
@@ -299,7 +302,7 @@ async def new_customer(
     user_details=Depends(access_token_bearer)
 ):
     try:
-    
+
         date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date()
 
         user_exists_with_email = await user_service.exist_email(email, session)
@@ -347,7 +350,7 @@ async def new_customer(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={"message": "Policy creation failed. Please try again later."}
             )
-        
+
         return JSONResponse(status_code=200, content={"message": "Policy Submitted to admin"})
 
     except Exception as e:
@@ -355,7 +358,6 @@ async def new_customer(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"message": f"An error occurred: {str(e)}"}
         )
-
 
 
 @agent_router.get("/agent_profile/{agentID}", response_model=list[dict])
@@ -378,30 +380,29 @@ async def agent_profile(agentID: UUID, session: AsyncSession = Depends(get_sessi
     return JSONResponse(status_code=200, content={"agent": agent_data})
 
 
-
 @agent_router.put("/AgentProfileUpdate/{agentID}", response_model=dict)
 async def Agent_profile_update(agentID: UUID,
-                         username: str = Form(...),
-                         email: EmailStr = Form(...),
-                         phone: str = Form(...),
-                         gender: str = Form(...),
-                         date_of_birth: str = Form(...),
-                         city: str = Form(...),
-                         image_url: Optional[str] = Form(None),
-                         image: Optional[UploadFile] = File(None),
-                         session: AsyncSession = Depends(get_session)):
+                               username: str = Form(...),
+                               email: EmailStr = Form(...),
+                               phone: str = Form(...),
+                               gender: str = Form(...),
+                               date_of_birth: str = Form(...),
+                               city: str = Form(...),
+                               image_url: Optional[str] = Form(None),
+                               image: Optional[UploadFile] = File(None),
+                               session: AsyncSession = Depends(get_session)):
     try:
         date_of_birth = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
     except ValueError:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST, 
+            status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid date format, expected YYYY-MM-DD"
         )
 
     user_exists = await agent_service.exist_agent_id(agentID, session)
     if not user_exists:
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND, 
+            status_code=status.HTTP_404_NOT_FOUND,
             detail="Agent not found"
         )
 
@@ -419,24 +420,22 @@ async def Agent_profile_update(agentID: UUID,
     return JSONResponse(status_code=200, content={"message": "Profile updated successfully"})
 
 
-
 @agent_router.get("/Policy_list/{PolicyId}", response_model=dict)
-async def agent_policy_list(PolicyId: UUID,session: AsyncSession = Depends(get_session),
-                          user_details=Depends(access_token_bearer)):
+async def agent_policy_list(PolicyId: UUID, session: AsyncSession = Depends(get_session),
+                            user_details=Depends(access_token_bearer)):
     try:
         result = await session.execute(
             select(
                 PolicyDetails.policy_holder,
-                PolicyDetails.policy_name, 
+                PolicyDetails.policy_name,
                 PolicyDetails.policy_type, PolicyDetails.nominee_name,
                 PolicyDetails.nominee_relationship, PolicyDetails.premium_amount,
                 PolicyDetails.coverage, PolicyDetails.date_of_birth,
                 PolicyDetails.income_range, PolicyDetails.gender,
-                PolicyDetails.feedback,PolicyDetails.id_proof,
-                PolicyDetails.passbook,PolicyDetails.photo,
-                PolicyDetails.pan_card,PolicyDetails.income_proof,
-                PolicyDetails.nominee_address_proof,PolicyDetails.email
-                ,PolicyDetails.phone,PolicyDetails.marital_status,
+                PolicyDetails.feedback, PolicyDetails.id_proof,
+                PolicyDetails.passbook, PolicyDetails.photo,
+                PolicyDetails.pan_card, PolicyDetails.income_proof,
+                PolicyDetails.nominee_address_proof, PolicyDetails.email, PolicyDetails.phone, PolicyDetails.marital_status,
                 PolicyDetails.city,
             ).where(PolicyDetails.policydetails_uid == PolicyId)
         )
@@ -444,7 +443,6 @@ async def agent_policy_list(PolicyId: UUID,session: AsyncSession = Depends(get_s
         policies = result.fetchone()
         if not policies:
             return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"message": "Policy not found"})
-        
 
         policies_data = {
             "policy_holder": policies.policy_holder,
@@ -468,7 +466,7 @@ async def agent_policy_list(PolicyId: UUID,session: AsyncSession = Depends(get_s
             "pan_card": policies.pan_card,
             "income_proof": policies.income_proof,
             "nominee_address_proof": policies.nominee_address_proof,
-            }
+        }
 
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
@@ -478,8 +476,6 @@ async def agent_policy_list(PolicyId: UUID,session: AsyncSession = Depends(get_s
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching policies: {str(e)}"
         )
-    
-
 
 
 @agent_router.put("/policyupdate/{PolicyId}")
@@ -531,21 +527,6 @@ async def policyupdates(
             nominee_relationship=nomineeRelation,
         )
 
-        # new_user = await agent_service.create_newuser(new_user_data, session)
-        # if not new_user:
-        #     raise HTTPException(
-        #         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        #         detail={"message": "User creation failed. Please try again later."}
-        #     )
-
-        # agent_data = ExistingUserPolicyRequest(
-        #     email=email,
-        #     policy_name=insurancePlan,
-        #     policy_type=insuranceType,
-        #     nominee_name=nomineeName,
-        #     nominee_relationship=nomineeRelation
-        # )
-
         update_user = await agent_service.Policyupdate(
             new_user_data, PolicyId, id_proof, passbook, income_proof, photo, pan_card, nominee_address_proof, session
         )
@@ -554,7 +535,7 @@ async def policyupdates(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail={"message": "Policy creation failed. Please try again later."}
             )
-        
+
         return JSONResponse(status_code=200, content={"message": "Policy Submitted to admin"})
 
     except Exception as e:
@@ -572,7 +553,7 @@ async def password_recovery(agent_id: AgentPasswordrecovery,
     agent = await agent_service.exist_agent_user_id(agentid, session)
     if not agent:
         raise HTTPException(status_code=404, detail="Agent not found")
-    
+
     result = await session.execute(select(AgentTable).where(AgentTable.agent_userid == agentid))
     agentinfo = result.scalars().first()
     await session.commit()
@@ -607,11 +588,11 @@ async def password_recovery(agent_id: AgentPasswordrecovery,
 async def password_reset(agent_data: RestpasswordModel, session: AsyncSession = Depends(get_session)):
     agent_id = agent_data.agentid
     password = agent_data.password
-    
+
     result = await session.execute(select(AgentTable).where(AgentTable.agent_userid == agent_id))
     agent = result.scalars().first()
     await session.commit()
-    
+
     hashed_password = generate_passwd_hash(password)
 
     agent.password = hashed_password
@@ -621,11 +602,177 @@ async def password_reset(agent_data: RestpasswordModel, session: AsyncSession = 
         await session.commit()
     except Exception as e:
         await session.rollback()
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to reset password")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Failed to reset password")
 
     return JSONResponse(
         status_code=status.HTTP_200_OK,
         content={
             "message": "Password reset successful",
         }
+    )
+
+
+@agent_router.post("/customerdata", response_model=dict)
+async def customerdata(
+    customer_data: CutomerDataRequest,
+    session: AsyncSession = Depends(get_session),
+    agent_details=Depends(access_token_bearer)
+):
+    email = customer_data.email
+    print("Email received:", email)
+
+    try:
+        query = (
+            select(
+                PolicyDetails.policydetails_uid,
+                PolicyDetails.policy_holder,
+                PolicyDetails.policy_name,
+                PolicyDetails.policy_type
+            )
+            .where(
+                (PolicyDetails.email == email) &
+                (PolicyDetails.policy_status == ApprovalStatus.approved) &
+                (PolicyDetails.delete_status == False)
+            )
+        )
+
+        result = await session.execute(query)
+        policies = result.fetchall()
+
+        if not policies:
+            return JSONResponse(status_code=status.HTTP_404_NOT_FOUND, content={"message": "Customer not found"})
+
+        customer_policies = [
+            {
+                "policydetails_uid": str(policy.policydetails_uid),
+                "policy_holder": policy.policy_holder,
+                "policy_name": policy.policy_name,
+                "policy_type": policy.policy_type,
+            }
+            for policy in policies
+        ]
+
+        return JSONResponse(status_code=200, content={"policies": customer_policies})
+
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An error occurred while fetching policies."
+        )
+
+
+@agent_router.get("/customerinfo/{PolicyId}", response_model=dict)
+async def customerinfo(
+    PolicyId: UUID,
+    session: AsyncSession = Depends(get_session),
+    user_details=Depends(access_token_bearer)
+):
+    try:
+        result = await session.execute(
+            select(
+                PolicyDetails.policydetails_uid,
+                PolicyDetails.policy_holder,
+                PolicyDetails.policy_name,
+                PolicyDetails.policy_type,
+                PolicyDetails.nominee_name,
+                PolicyDetails.nominee_relationship,
+                PolicyDetails.premium_amount,
+                PolicyDetails.coverage,
+                PolicyDetails.age,
+                PolicyDetails.income_range,
+                PolicyDetails.gender,
+                PolicyDetails.photo,
+                PolicyDetails.email,
+                PolicyDetails.monthly_amount,
+                PolicyDetails.phone,
+                PolicyDetails.marital_status,
+                PolicyDetails.city,
+                PolicyDetails.payment_status,
+            )
+            .where(PolicyDetails.policydetails_uid == PolicyId))
+
+        policies = result.mappings().first()
+
+        if not policies:
+            logger.warning(f"Policy {PolicyId} not found.")
+            return JSONResponse(
+                status_code=status.HTTP_404_NOT_FOUND,
+                content={"message": "Policy not found"},
+            )
+
+        policy_dict = {
+            key: str(value) if isinstance(value, UUID) else value
+            for key, value in dict(policies).items()
+        }
+
+        return JSONResponse(status_code=200, content={"policies": policy_dict})
+
+    except Exception as e:
+        logger.error(
+            f"Error fetching policy {PolicyId}: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="An internal server error occurred.",
+        )
+
+
+@agent_router.get("/search-suggestions", response_model=List[str])
+async def search_suggestions(query: str, session: AsyncSession = Depends(get_session)):
+
+    query = query.strip()
+
+    if not query:
+        raise HTTPException(
+            status_code=400, detail="Query parameter is required.")
+
+    stmt = select(PolicyDetails.email).where(
+        PolicyDetails.email.ilike(f"%{query}%")).limit(5)
+
+    result = await session.execute(stmt)
+    emails = result.scalars().all()
+
+    return emails if emails else []
+
+
+@agent_router.get("/policy_list", response_model=List[dict])
+async def policy_data(session: AsyncSession = Depends(get_session),
+                      policy_details=Depends(access_token_bearer)):
+    result = await session.execute(select(
+        policytable.policy_name,
+        policytable.policy_type,
+        policytable.block_status,
+        policytable.role,
+        policytable.policy_uid,
+        policytable.id_proof,
+        policytable.passbook,
+        policytable.photo,
+        policytable.pan_card,
+        policytable.income_proof,
+        policytable.nominee_address_proof,
+        policytable.coverage,
+        policytable.settlement,
+        policytable.premium_amount,
+        policytable.age_group,
+        policytable.description,
+        policytable.income_range,
+        policytable.policy_id,
+    ).where(policytable.delete_status == False))
+    policies = result.mappings().first()
+
+    if not policies:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"message": "Policy not found"},
+        )
+
+    policy_dict = {
+        key: str(value) if isinstance(value, UUID) else value
+        for key, value in dict(policies).items()
+    }
+
+    return JSONResponse(
+        status_code=200,
+        content={"policy": policy_dict}
     )

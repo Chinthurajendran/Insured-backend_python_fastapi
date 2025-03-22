@@ -71,3 +71,6 @@ class AgentPasswordrecovery (BaseModel):
 class RestpasswordModel(BaseModel):
     agentid: str
     password:str
+
+class CutomerDataRequest(BaseModel):
+    email: str

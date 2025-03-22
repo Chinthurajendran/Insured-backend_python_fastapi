@@ -17,10 +17,8 @@ class TokenBearer(HTTPBearer):
         token = creds.credentials
         
         token_data = decode_token(token)
-        print("ttttttttttttttttttttttttt",token_data)
 
         if not self.token_valid(token):
-            print("exxxxxxxxxxxxx")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or  expired token"
@@ -41,22 +39,13 @@ class TokenBearer(HTTPBearer):
     def check_admin_role(self, token_data: dict):
 
         user_data = token_data.get("user", {})
-        user_role = user_data.get("admin_role")
-
-        if user_role != "admin":
+        admin_role = user_data.get("admin_role")
+        
+        if admin_role != "admin":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Access denied! Only admins are allowed."
             )
-
-
-    # def decode_token(token: str):
-    #     try:
-    #         return jwt.decode(token, 'your_secret_key', algorithms=['HS256'])
-    #     except jwt.ExpiredSignatureError:
-    #         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Token has expired")
-    #     except jwt.InvalidTokenError:
-    #         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Invalid token")
 
 
 class AccessTokenBearer(TokenBearer):
@@ -70,7 +59,6 @@ class AccessTokenBearer(TokenBearer):
 
 class RefreshTokenBearer(TokenBearer):
     def verify_token_data(self, token_data: dict):
-        print("ttttttttttttttttttttt",token_data)
         if token_data and not token_data['refresh']:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
