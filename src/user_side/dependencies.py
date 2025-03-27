@@ -58,7 +58,6 @@ class AccessTokenBearer(TokenBearer):
 
 class RefreshTokenBearer(TokenBearer):
     def verify_token_data(self, token_data: dict):
-        print("111111111111111")
         if token_data and not token_data['refresh']:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

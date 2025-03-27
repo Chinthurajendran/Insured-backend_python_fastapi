@@ -88,23 +88,13 @@ class AdminService:
         return new_policy
 
 
-    # async def upload_to_s3_bucket(self,file: UploadFile, folder_name: str) -> str:
-    #     try:
-    #         file_path = f"{folder_name}/{file.filename}"
-    #         s3_client.upload_fileobj(file.file, BUCKET_NAME, file_path)
-    #         file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
-    #         return file_url
-    #     except ClientError as e:
-    #         raise HTTPException(
-    #             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-    #             detail=f"Failed to upload file '{file.filename}' to S3: {str(e)}")
         
 
     async def upload_to_s3_bucket(self, file: UploadFile, folder_name: str) -> str:
         try:
             file_path = f"{folder_name}/{file.filename}"
-            content_type, _ = mimetypes.guess_type(file.filename)  # Detect MIME type
-            content_type = content_type or "application/octet-stream"  # Default if unknown
+            content_type, _ = mimetypes.guess_type(file.filename)  
+            content_type = content_type or "application/octet-stream" 
 
             def upload():
                 """ Upload file asynchronously using boto3 in a separate thread. """
@@ -115,8 +105,7 @@ class AdminService:
                     ContentType=content_type
                 )
 
-            await asyncio.to_thread(upload)  # Run blocking call in a separate thread
-
+            await asyncio.to_thread(upload) 
             file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
             return file_url
 
@@ -125,27 +114,6 @@ class AdminService:
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to upload file '{file.filename}' to S3: {e.response['Error']['Message']}"
             )
-
-    # async def delete_folder_contents(self, bucket_name, folder_name):
-    #     try:
-
-    #         response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=folder_name)
-
-    #         if 'Contents' not in response:
-    #             print(f"No files found in '{folder_name}' in '{bucket_name}'.")
-    #             return True
-
-    #         file_keys = [{'Key': obj['Key']} for obj in response['Contents']]
-
-
-    #         s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': file_keys})
-
-    #         print(f"Deleted {len(file_keys)} files from '{folder_name}' in '{bucket_name}'.")
-    #         return True
-    #     except ClientError as e:
-    #         print(f"Error deleting folder contents: {e.response['Error']['Message']}")
-    #         return False
-        
 
     async def delete_folder_contents(self, bucket_name: str, folder_name: str) -> bool:
         try:
@@ -180,7 +148,7 @@ class AdminService:
                     file_keys = [{"Key": obj["Key"]} for obj in batch]
                     s3_client.delete_objects(Bucket=bucket_name, Delete={"Objects": file_keys})
 
-            # Run both list and delete operations in a separate thread (since boto3 is blocking)
+
             files_to_delete = await asyncio.to_thread(list_objects)
 
             if not files_to_delete:

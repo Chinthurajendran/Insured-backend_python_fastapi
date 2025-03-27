@@ -12,6 +12,11 @@ class ApprovalStatus(str, PyEnum):
     processing = "processing"
     rejected = "rejected"
 
+class TransactionType(str, Enum):
+    Debit = "debit"
+    Credit = "credit"
+
+
 
 class policytable(SQLModel, table=True):
     __tablename__ = "policytable"
@@ -143,3 +148,29 @@ class policyinfo(SQLModel, table=True):
         return f"<policytable {self.policyinfo_name}>"
     
 
+class Transaction(SQLModel, table=True):
+    __tablename__ = "transaction"
+    
+    transaction_uid: uuid.UUID = Field(
+        sa_column=Column(
+            pg.UUID,
+            nullable=False,
+            primary_key=True,
+            default=uuid.uuid4
+        )
+    )
+    policy_id: uuid.UUID = Field(
+        sa_column=Column(pg.UUID, ForeignKey("policydetails.policydetails_uid"), nullable=False)
+    )
+    description: str = Field(default="", nullable=True)
+    amount: int = Field(sa_column=Column(pg.INTEGER, nullable=False))
+    role: str = Field(default="admin", max_length=20, nullable=True)
+    create_at: datetime = Field(
+        sa_column=Column(pg.TIMESTAMP, default=datetime.utcnow)
+    )
+    update_at: datetime = Field(
+        sa_column=Column(pg.TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+    )
+
+    def __repr__(self):
+        return f"<Transaction {self.transaction_uid}>"

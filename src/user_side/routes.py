@@ -1,8 +1,8 @@
-from fastapi import APIRouter, Depends, status, Form, UploadFile, File
+from fastapi import APIRouter, Depends, status, Form, UploadFile, File,Query,WebSocket, WebSocketDisconnect,FastAPI
 from .schemas import *
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.db.database import get_session
-from .service import UserService
+from .service import *
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from src.utils import create_access_token, decode_token, verify_password
@@ -24,10 +24,16 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from src.mail import mail_config
 from src.utils import generate_passwd_hash
 from src.admin_side.models import *
+import pytz
+from sqlalchemy.sql import func
+from sqlalchemy import text
+from src.agent_side.models import*
+
 
 auth_router = APIRouter()
 user_service = UserService()
 access_token_bearer = AccessTokenBearer()
+manager = ConnectionManager()
 REFRESH_TOKEN_EXPIRY = 2
 GOOGLE_CLIENT_ID = "270374642053-gvj2j07247e2h96gbd929oh12li1rs2l.apps.googleusercontent.com"
 
@@ -654,7 +660,7 @@ async def notification(userId: UUID, session: AsyncSession = Depends(get_session
             {
                 "notification_uid": str(row.notification_uid),
                 "message": row.message,
-                "create_at": row.create_at.isoformat()  
+                "create_at": row.create_at.isoformat()
             }
             for row in messages
         ]
@@ -670,6 +676,7 @@ async def notification(userId: UUID, session: AsyncSession = Depends(get_session
             detail=f"An error occurred while fetching notifications: {str(e)}"
         )
 
+
 @auth_router.put("/Clearnotification/{userId}")
 async def clearnotification(userId: UUID, session: AsyncSession = Depends(get_session)):
     try:
@@ -680,7 +687,7 @@ async def clearnotification(userId: UUID, session: AsyncSession = Depends(get_se
 
         if not messages:
             return JSONResponse(status_code=404, content={"message": "No notifications found"})
-        
+
         for msg in messages:
             msg.delete_status = True
 
@@ -690,8 +697,251 @@ async def clearnotification(userId: UUID, session: AsyncSession = Depends(get_se
         return JSONResponse(status_code=200, content={"message": "Deleted successfully"})
 
     except Exception as e:
-        print(f"Error: {e}") 
+        print(f"Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while deleting notifications: {str(e)}"
+        )
+
+
+@auth_router.post("/RazorpayPaymentCreation")
+async def RazorpayPayment(payment: PaymentRequest, session: AsyncSession = Depends(get_session)):
+    """Creates an order in Razorpay."""
+    try:
+        order_data = {
+            "amount": payment.amount * 100,
+            "currency": payment.currency,
+            "receipt": payment.receipt,
+            "payment_capture": 1
+        }
+        payment = await user_service.payment_creation(order_data, session)
+
+        return payment
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@auth_router.post("/verify-payment/{PolicyId}")
+async def verify_payment(
+    PolicyId: UUID,
+    request_data: PaymentVerificationRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    try:
+        verification = await user_service.payment_verification(PolicyId, request_data, session)
+
+        if verification:
+            return {"status": "success", "message": "Payment verified"}
+
+        raise HTTPException(
+            status_code=400, detail="Invalid payment signature")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@auth_router.post("/PaymentUpdation")
+async def PaymentUpdation(
+    session: AsyncSession = Depends(get_session)
+):
+    try:
+        ist = pytz.timezone("Asia/Kolkata")
+        utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        local_time = utc_time.astimezone(ist).replace(tzinfo=None)
+
+        # Fetch only policies where payment is still True and is overdue
+        policy_data = await session.execute(
+            select(PolicyDetails).where(
+                PolicyDetails.payment_status == True,
+                PolicyDetails.date_of_payment <= (
+                    local_time - timedelta(days=30))
+            )
+        )
+
+        policies = policy_data.scalars().all()
+
+        if not policies:
+            return {"message": "No policies require payment status update"}
+
+        # Update all policies in bulk
+        for policy in policies:
+            policy.payment_status = False
+
+        await session.commit()  # Save changes
+
+        return {"message": f"{len(policies)} payment statuses updated successfully"}
+
+    except Exception as e:
+        raise HTTPException(
+            status_code=500, detail=f"Internal server error: {str(e)}")
+
+
+@auth_router.get("/WalletInfo/{userId}")
+async def walletinfo(userId: UUID, session: AsyncSession = Depends(get_session)):
+    try:
+        # Fetch transactions
+        result = await session.execute(
+            select(
+                Wallet.transaction_uid,
+                Wallet.description,
+                Wallet.amount,
+                Wallet.transaction_type,
+                Wallet.create_at
+            ).where(Wallet.user_id == userId)
+        )
+        wallet = result.fetchall()
+
+        # Serialize transactions
+        wallet_data = [
+            {
+                "transaction_uid": str(row.transaction_uid),
+                "description": row.description,
+                "amount": row.amount,
+                "transaction_type": row.transaction_type,
+                "create_at": row.create_at.isoformat()
+            }
+            for row in wallet
+        ]
+
+        # Calculate total balance (sum of debits)
+        total_debit_result = await session.execute(
+            select(func.sum(Wallet.amount)).where(
+                (Wallet.user_id == userId) & (
+                    Wallet.transaction_type == "Debit")
+            )
+        )
+        total_debit = total_debit_result.scalar() or 0
+
+        total_credit_result = await session.execute(
+            select(func.sum(Wallet.amount)).where(
+                (Wallet.user_id == userId) & (
+                    Wallet.transaction_type == "Credit")
+            )
+        )
+        total_credit = total_credit_result.scalar() or 0
+
+        balance = total_debit - total_credit
+
+
+        return JSONResponse(
+            status_code=200,
+            content={"wallet": wallet_data, "balance": balance}
+        )
+
+    except Exception as e:
+        print(f"Error: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching wallet data: {str(e)}"
+        )
+
+
+@auth_router.post("/wallet-verify-payment_add/{userId}")
+async def wallet_verify_payment_add(
+    userId: UUID,
+    request_data: PaymentVerificationRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    try:
+
+        verification = await user_service.wallet_payment_add(userId, request_data, session)
+
+        if verification:
+            return {"status": "success", "message": "Payment verified"}
+
+        raise HTTPException(
+            status_code=400, detail="Invalid payment signature")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@auth_router.post("/wallet-verify-payment-withdraw/{userId}")
+async def wallet_verify_payment_withdraw(
+    userId: UUID,
+    request_data: PaymentVerificationRequest,
+    type: str = Query(..., regex="^(wallet_policy|withdraw)$"),
+    session: AsyncSession = Depends(get_session)
+):
+    try:
+                        # Calculate total balance (sum of debits)
+        total_debit_result = await session.execute(
+            select(func.sum(Wallet.amount)).where(
+                (Wallet.user_id == userId) & (
+                    Wallet.transaction_type == "Debit")
+            )
+        )
+        total_debit = total_debit_result.scalar() or 0
+
+        total_credit_result = await session.execute(
+            select(func.sum(Wallet.amount)).where(
+                (Wallet.user_id == userId) & (
+                    Wallet.transaction_type == "Credit")
+            )
+        )
+        total_credit = total_credit_result.scalar() or 0
+        amount = int(request_data.amount) // 100
+
+        balance = total_debit - total_credit-amount
+        if balance <= 0:
+            return JSONResponse(
+                status_code=400,
+                content={"error": "Insufficient balance", "balance": balance}
+            )
+        else:
+            verification = await user_service.wallet_payment_withdraw(userId, request_data,type, session)
+
+            if verification:
+                return {"status": "success", "message": "Payment verified"}
+
+            raise HTTPException(
+                status_code=400, detail="Invalid payment signature")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")
+
+
+@auth_router.get("/nearestagent/{location}")
+async def nearestagent(location: str, session: AsyncSession = Depends(get_session)):
+    try:
+        # Parse location into latitude and longitude
+        try:
+            lat, lon = map(float, location.split(","))
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid location format. Expected 'latitude,longitude'."
+            )
+
+        # Query the nearest available agent (not busy)
+        result = await session.execute(
+            select(AgentTable.agent_id, AgentTable.latitude, AgentTable.longitude)
+            .where(AgentTable.busy_status == False)  # Only available agents
+            .order_by(func.abs(AgentTable.latitude - lat) + func.abs(AgentTable.longitude - lon))
+            .limit(1)  # Get the closest one
+        )
+        nearest_agent = result.first()
+
+        # If no free agents found, get the closest one (even if busy)
+        if not nearest_agent:
+            result = await session.execute(
+                select(AgentTable.agent_id, AgentTable.latitude, AgentTable.longitude)
+                .order_by(func.abs(AgentTable.latitude - lat) + func.abs(AgentTable.longitude - lon))
+                .limit(1)
+            )
+            nearest_agent = result.first()
+
+        # If still no agent found, return an error response
+        if not nearest_agent:
+            return JSONResponse(status_code=404, content={"message": "No agents available"})
+
+        agent_id, agent_lat, agent_lon = nearest_agent
+        return JSONResponse(status_code=200, content={"agents": [{"id": str(agent_id)}]})
+
+    except Exception as e:
+        print(f"Error: {e}")
+        traceback.print_exc()  # Prints detailed error traceback in logs
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching nearest agents: {str(e)}"
         )

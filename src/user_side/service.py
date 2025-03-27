@@ -4,7 +4,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from datetime import datetime
 from src.utils import generate_passwd_hash, UPLOAD_DIR, random_code
-from fastapi import UploadFile, File, HTTPException, status
+from fastapi import UploadFile, File, HTTPException, status,WebSocket, WebSocketDisconnect
 import logging
 import aiofiles
 from uuid import UUID
@@ -14,6 +14,17 @@ import os
 import boto3
 from src.admin_side.models import *
 import pytz
+import razorpay 
+import hmac
+import hashlib
+from typing import List
+
+load_dotenv()
+
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
+
+client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 load_dotenv()
 
@@ -259,3 +270,178 @@ class UserService:
         await session.refresh(notification)
 
         return notification
+
+    async def payment_creation(self, order_data, session: AsyncSession):
+            try:
+                order = client.order.create(order_data)
+                return {
+                    "order_id": order["id"],
+                    "amount": order["amount"],
+                    "currency": order["currency"]
+                }
+
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Payment creation failed: {str(e)}")
+    
+    async def payment_verification(
+            self, 
+            PolicyId: UUID, 
+            request_data: PaymentVerificationRequest, 
+            session: AsyncSession
+        ) -> bool:
+            try:
+                # Generate HMAC signature
+                generated_signature = hmac.new(
+                    RAZORPAY_KEY_SECRET.encode(),
+                    f"{request_data.order_id}|{request_data.payment_id}".encode(),
+                    hashlib.sha256
+                ).hexdigest()
+
+                # Convert UTC to IST
+                ist = pytz.timezone("Asia/Kolkata")
+                utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+                local_time = utc_time.astimezone(ist).replace(tzinfo=None)
+
+                # Secure comparison of signatures
+                if hmac.compare_digest(generated_signature, request_data.signature):
+
+                    transaction = Transaction(
+                        policy_id=PolicyId,
+                        amount = int(request_data.amount) // 100,
+                        description="Paid insurance amount",
+                        create_at=local_time,
+                        update_at=local_time
+                    )
+
+                    policy_data = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == PolicyId))
+                    policys = policy_data.scalars().first()
+                    if not policys:  # Ensure PolicyId exists
+                            raise HTTPException(status_code=404, detail="Policy not found")
+                    policys.payment_status = True
+                    
+                    session.add(transaction)
+                    await session.commit()
+                    await session.refresh(transaction)
+                    
+                    return True
+                
+                return False  # Instead of `raise False`
+            
+            except Exception as e:
+                raise HTTPException(status_code=500, detail=f"Payment verification failed: {str(e)}")
+        
+    async def wallet_payment_add(
+                self, 
+                userId: UUID, 
+                request_data: PaymentVerificationRequest, 
+                session: AsyncSession
+            ) -> bool:
+                try:
+                    # Generate HMAC signature
+                    generated_signature = hmac.new(
+                        RAZORPAY_KEY_SECRET.encode(),
+                        f"{request_data.order_id}|{request_data.payment_id}".encode(),
+                        hashlib.sha256
+                    ).hexdigest()
+
+                    # Convert UTC to IST
+                    ist = pytz.timezone("Asia/Kolkata")
+                    utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+                    local_time = utc_time.astimezone(ist).replace(tzinfo=None)
+
+                    # Secure comparison of signatures
+                    if hmac.compare_digest(generated_signature, request_data.signature):
+
+                        transaction = Wallet(
+                            user_id=userId,
+                            amount = int(request_data.amount) // 100,
+                            description="Amount Add",
+                            transaction_type="debit",
+                            create_at=local_time,
+                            update_at=local_time
+                        )
+                        
+                        session.add(transaction)
+                        await session.commit()
+                        await session.refresh(transaction)
+                        
+                        return True
+                    
+                    return False  # Instead of `raise False`
+                
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Payment verification failed: {str(e)}")
+    
+
+    async def wallet_payment_withdraw(
+                self, 
+                userId: UUID, 
+                request_data: PaymentVerificationRequest,
+                transaction_type:str, 
+                session: AsyncSession
+            ) -> bool:
+                try:
+                    # Generate HMAC signature
+                    generated_signature = hmac.new(
+                        RAZORPAY_KEY_SECRET.encode(),
+                        f"{request_data.order_id}|{request_data.payment_id}".encode(),
+                        hashlib.sha256
+                    ).hexdigest()
+
+                    # Convert UTC to IST
+                    ist = pytz.timezone("Asia/Kolkata")
+                    utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+                    local_time = utc_time.astimezone(ist).replace(tzinfo=None)
+
+                    # Secure comparison of signatures
+                    if hmac.compare_digest(generated_signature, request_data.signature):
+                        if transaction_type == 'withdraw':
+
+                            transaction = Wallet(
+                                user_id=userId,
+                                amount = int(request_data.amount) // 100,
+                                description="Amount withdraw",
+                                transaction_type="credit",
+                                create_at=local_time,
+                                update_at=local_time
+                            )
+                        else:
+                            transaction = Wallet(
+                                user_id=userId,
+                                amount = int(request_data.amount) // 100,
+                                description="Paid insurance amount",
+                                transaction_type="credit",
+                                create_at=local_time,
+                                update_at=local_time
+                            )
+                             
+                        
+                        session.add(transaction)
+                        await session.commit()
+                        await session.refresh(transaction)
+                        
+                        return True
+                    
+                    return False  # Instead of `raise False`
+                
+                except Exception as e:
+                    raise HTTPException(status_code=500, detail=f"Payment verification failed: {str(e)}")
+
+
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        self.active_connections.remove(websocket)
+
+    async def send_message(self, message: str, websocket: WebSocket):
+        await websocket.send_text(message)
+
+    async def broadcast(self, message: str):
+        for connection in self.active_connections:
+            await connection.send_text(message)

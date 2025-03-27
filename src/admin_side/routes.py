@@ -804,7 +804,7 @@ async def policygraph(session: AsyncSession = Depends(get_session),
         policies_data = [
             {
                 "policydetails_uid": str(policy[0]),  
-                "create_at": policy[1].isoformat() if policy[1] else None,  # ✅ Convert datetime
+                "create_at": policy[1].isoformat() if policy[1] else None,
             }
             for policy in policies
         ]

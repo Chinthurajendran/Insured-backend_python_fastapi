@@ -59,3 +59,15 @@ class PolicyDetails(BaseModel):
 class PolicyRegistration(BaseModel):
     nominee_name: str
     nominee_relationship: str
+
+
+class PaymentRequest(BaseModel):
+    amount: int
+    currency: str = "INR"
+    receipt: str
+
+class PaymentVerificationRequest(BaseModel):
+    order_id: str
+    amount: int
+    payment_id: str
+    signature: str

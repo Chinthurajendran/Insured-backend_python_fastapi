@@ -4,6 +4,7 @@ from src.config import Config
 from src.user_side.models import usertable
 from src.admin_side.models import policytable
 from src.agent_side.models import AgentTable
+from src.messages.models import*
 from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlalchemy.orm import sessionmaker
 

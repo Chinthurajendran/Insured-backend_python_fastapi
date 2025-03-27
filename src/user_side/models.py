@@ -2,6 +2,12 @@ from sqlmodel import SQLModel, Field, Column,ForeignKey
 from datetime import date, datetime
 import uuid
 import sqlalchemy.dialects.postgresql as pg
+from enum import Enum as PyEnum
+from sqlalchemy import Enum
+
+class TransactionType(str, PyEnum):
+    Debit = "debit"
+    Credit = "credit"
 
 class usertable(SQLModel, table=True):
     __tablename__ = "usertable"
@@ -16,7 +22,7 @@ class usertable(SQLModel, table=True):
     username: str
     email: str = Field(index=True)
     image: str = Field(default="")
-    password: str = Field(default=None, nullable=True)  # FIXED
+    password: str = Field(default=None, nullable=True) 
     gender: str = Field(nullable=True)
     phone: str = Field(nullable=True)
     date_of_birth: date = Field(nullable=True)
@@ -56,3 +62,34 @@ class Notification(SQLModel, table=True):
 
     def __repr__(self):
         return f"<Notification {self.message}>"
+
+
+class Wallet(SQLModel, table=True):
+    __tablename__ = "wallet"
+    
+    transaction_uid: uuid.UUID = Field(
+        sa_column=Column(
+            pg.UUID,
+            nullable=False,
+            primary_key=True,
+            default=uuid.uuid4
+        )
+    )
+    user_id: uuid.UUID = Field(
+        sa_column=Column(pg.UUID, ForeignKey("usertable.user_id"), nullable=False)
+    )
+    description: str = Field(default="", nullable=True)
+    amount: int = Field(sa_column=Column(pg.INTEGER, nullable=False))
+    transaction_type: TransactionType = Field(
+        sa_column=Column(Enum(TransactionType), default=TransactionType.Debit)
+    )
+    role: str = Field(default="user", max_length=20, nullable=True)
+    create_at: datetime = Field(
+        sa_column=Column(pg.TIMESTAMP, default=datetime.utcnow)
+    )
+    update_at: datetime = Field(
+        sa_column=Column(pg.TIMESTAMP, default=datetime.utcnow, onupdate=datetime.utcnow)
+    )
+
+    def __repr__(self):
+        return f"<Transaction {self.transaction_uid}>"

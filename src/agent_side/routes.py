@@ -22,6 +22,7 @@ from src.user_side.models import *
 from src.user_side.service import UserService
 from typing import List
 from src.utils import generate_passwd_hash
+from src.messages.models import *
 
 agent_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
@@ -652,6 +653,7 @@ async def customerdata(
             }
             for policy in policies
         ]
+        
 
         return JSONResponse(status_code=200, content={"policies": customer_policies})
 
@@ -775,4 +777,54 @@ async def policy_data(session: AsyncSession = Depends(get_session),
     return JSONResponse(
         status_code=200,
         content={"policy": policy_dict}
+    )
+
+
+
+@agent_router.get("/customercare/{agentId}", response_model=List[dict])
+async def customercare(
+    agentId: UUID,
+    session: AsyncSession = Depends(get_session),
+    policy_details=Depends(access_token_bearer),
+):
+    
+    result = await session.execute(
+        select(
+            Message.uid,
+            Message.content,
+            Message.sender_id,
+            Message.receiver_id
+        ).where(Message.receiver_id == agentId)
+    )
+    customerdata = result.mappings().all()
+
+    if not customerdata:
+        return JSONResponse(
+            status_code=status.HTTP_404_NOT_FOUND,
+            content={"message": "No messages found"},
+        )
+    
+    sender_ids = {row["sender_id"] for row in customerdata}
+
+    result = await session.execute(
+        select(usertable.user_id, usertable.username)
+        .where((usertable.delete_status == False) & (usertable.user_id.in_(sender_ids)))
+    )
+    users = {row["user_id"]: row["username"] for row in result.mappings().all()}
+
+    unique_senders = {}
+    for row in customerdata:
+        sender_id = row["sender_id"]
+        if sender_id not in unique_senders:
+            unique_senders[sender_id] = {
+                "uid": str(row["uid"]),
+                "content": row["content"],
+                "sender_id": str(sender_id),
+                "receiver_id": str(row["receiver_id"]),
+                "sender_name": users.get(sender_id, "Unknown"),
+            }
+
+    return JSONResponse(
+        status_code=200,
+        content={"messages": list(unique_senders.values())}
     )

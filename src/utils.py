@@ -24,19 +24,17 @@ def generate_passwd_hash(password):
 def verify_password(password,hash):
     return password_context.verify(password,hash)
 
-# ACCESS_TOKEN_EXPIRY = 3600
+
 ACCESS_TOKEN_EXPIRY = 60
 
 ist = pytz.timezone("Asia/Kolkata")
 
 def create_access_token(user_data: dict, expiry: timedelta = None, refresh: bool = False):
-    # Get the current UTC time
+
     utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
 
-    # Convert UTC time to IST
     local_time = utc_time.astimezone(ist)
 
-    # Compute expiration time correctly
     expiration_time_ist = local_time + (expiry if expiry else timedelta(seconds=ACCESS_TOKEN_EXPIRY))
 
     payload = {}
@@ -61,7 +59,7 @@ def decode_token(token: str):
         token_data = jwt.decode(
             token,
             key=Config.JWT_SECRET,
-            algorithms=[Config.JWT_ALOGRITHM]  # Fixed typo
+            algorithms=[Config.JWT_ALOGRITHM] 
         )
         return token_data
     except ExpiredSignatureError:
