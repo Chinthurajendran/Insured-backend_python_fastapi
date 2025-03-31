@@ -105,9 +105,26 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     try:
         while True:
             data = await websocket.receive_json()
-            print("22222222222222",data)
+            print("111111111111111111111",data)
             target_id = data.get("target_id")
-            print("11111111111111111111111",target_id)
+            if target_id:
+                await connection_manager.send_personal_message(target_id, data)
+            
+    except WebSocketDisconnect:
+        connection_manager.disconnect(user_id, websocket)
+    except Exception as e:
+        print(f"Error: {e}")
+        connection_manager.disconnect(user_id, websocket)
+
+@app.websocket("/ws/webrtcvedio/{user_id}")
+async def websocket_endpoint(websocket: WebSocket, user_id: str):
+    """WebRTC Signaling WebSocket"""
+    await connection_manager.connect(user_id, websocket)
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            target_id = data.get("target_id")
             if target_id:
                 await connection_manager.send_personal_message(target_id, data)
             
