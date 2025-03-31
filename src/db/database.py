@@ -29,6 +29,15 @@ async def get_session() -> AsyncSession:
         expire_on_commit=False
     )
 
+    # async with Session() as session:
+    #     yield session
+    
     async with Session() as session:
-        yield session
-
+        try:
+            yield session  # Provide session to route
+            await session.commit()  # Explicitly commit before function exits
+        except Exception:
+            await session.rollback()  # Rollback only on failure
+            raise
+        finally:
+            await session.close()  # Ensure session is closed properly

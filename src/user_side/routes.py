@@ -68,13 +68,11 @@ async def create_user_account(user_data: UserCreate, session: AsyncSession = Dep
 async def login_user(login_data: UserLoginModel, session: AsyncSession = Depends(get_session)):
     email = login_data.email
     password = login_data.password
-
     user = await user_service.get_user_by_email(email, session)
-
     if user.block_status:
         raise HTTPException(status_code=404, detail="User is blocked")
-
-    if user is not None:
+    
+    if user is not None:    
         password_vaild = verify_password(password, user.password)
 
         if password_vaild:
@@ -96,10 +94,15 @@ async def login_user(login_data: UserLoginModel, session: AsyncSession = Depends
                 expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
             )
 
-        if isinstance(user_access_token, bytes):
-            user_access_token = user_access_token.decode("utf-8")
-        if isinstance(user_refresh_token, bytes):
-            user_refresh_token = user_refresh_token.decode("utf-8")
+        
+        # print(f"user_access_token type: {type(user_access_token)}")
+        # print(f"user_refresh_token type: {type(user_refresh_token)}")
+
+
+        # if isinstance(user_access_token, bytes):
+        #     user_access_token = user_access_token.decode("utf-8")
+        # if isinstance(user_refresh_token, bytes):
+        #     user_refresh_token = user_refresh_token.decode("utf-8")
 
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
@@ -121,19 +124,15 @@ async def login_user(login_data: UserLoginModel, session: AsyncSession = Depends
 @auth_router.post('/password-recovery')
 async def password_recovery(user_email: Passwordrecovery,
                             session: AsyncSession = Depends(get_session)):
-
     email = user_email.email
-
     user = await user_service.exist_email(email, session)
-
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    result = await session.execute(
+    select(usertable)
+    .where(usertable.email == email))
 
-    result = await session.execute(select(usertable).where(usertable.email == email))
     user = result.scalars().first()
-
-    if user.block_status:
-        raise HTTPException(status_code=403, detail="User is blocked")
 
     reset_link = f"http://localhost:5173/Resetpassword"
 
@@ -153,6 +152,7 @@ async def password_recovery(user_email: Passwordrecovery,
     fm = FastMail(mail_config)
     try:
         await fm.send_message(message)
+        await session.commit()  # Ensure session is committed
     except Exception as e:
         raise HTTPException(
             status_code=500, detail="Failed to send password reset email")
@@ -280,7 +280,6 @@ async def google_login(auth_data: GoogleAuthModel, session: AsyncSession = Depen
 
 @auth_router.post("/user_refresh_token")
 async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer())):
-    print("111111111111111")
     expiry_timestamp = token_details["exp"]
     if datetime.fromtimestamp(expiry_timestamp) > datetime.now():
         new_access_token = create_access_token(
@@ -916,7 +915,7 @@ async def nearestagent(location: str, session: AsyncSession = Depends(get_sessio
         # Query the nearest available agent (not busy)
         result = await session.execute(
             select(AgentTable.agent_id, AgentTable.latitude, AgentTable.longitude)
-            .where(AgentTable.busy_status == False)  # Only available agents
+            .where((AgentTable.busy_status == False) & (AgentTable.agent_login_status == True) )  # Only available agents
             .order_by(func.abs(AgentTable.latitude - lat) + func.abs(AgentTable.longitude - lon))
             .limit(1)  # Get the closest one
         )
