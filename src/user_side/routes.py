@@ -28,12 +28,12 @@ import pytz
 from sqlalchemy.sql import func
 from sqlalchemy import text
 from src.agent_side.models import*
+from src.messages.connetct_manager import connection_manager
 
 
 auth_router = APIRouter()
 user_service = UserService()
 access_token_bearer = AccessTokenBearer()
-manager = ConnectionManager()
 REFRESH_TOKEN_EXPIRY = 2
 GOOGLE_CLIENT_ID = "270374642053-gvj2j07247e2h96gbd929oh12li1rs2l.apps.googleusercontent.com"
 
@@ -56,6 +56,7 @@ async def create_user_account(user_data: UserCreate, session: AsyncSession = Dep
             status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
 
     new_user = await user_service.create_user(user_data, session)
+    
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
         content={
@@ -95,14 +96,14 @@ async def login_user(login_data: UserLoginModel, session: AsyncSession = Depends
             )
 
         
-        # print(f"user_access_token type: {type(user_access_token)}")
-        # print(f"user_refresh_token type: {type(user_refresh_token)}")
+            # print(f"user_access_token type: {type(user_access_token)}")
+            # print(f"user_refresh_token type: {type(user_refresh_token)}")
 
 
-        # if isinstance(user_access_token, bytes):
-        #     user_access_token = user_access_token.decode("utf-8")
-        # if isinstance(user_refresh_token, bytes):
-        #     user_refresh_token = user_refresh_token.decode("utf-8")
+        if isinstance(user_access_token, bytes):
+            user_access_token = user_access_token.decode("utf-8")
+        if isinstance(user_refresh_token, bytes):
+            user_refresh_token = user_refresh_token.decode("utf-8")
 
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
@@ -620,27 +621,27 @@ async def policyinfo_list(session: AsyncSession = Depends(get_session)):
 @auth_router.get("/UserPolicyStatus/{userId}")
 async def Userpolicystatus(userId: UUID, session: AsyncSession = Depends(get_session)):
     try:
+        # Fetch policies with 'approved' or 'processing' statuses for a specific user
         result = await session.execute(
-            select(PolicyDetails.policy_status)
-            .where(
+            select(PolicyDetails.policy_status, PolicyDetails.policy_id).where(
                 PolicyDetails.user_id == userId,
                 PolicyDetails.policy_status.in_(["approved", "processing"])
             )
         )
-
-        policies = result.scalars().all()
+        policies = result.fetchall()
 
         if not policies:
-            return JSONResponse(status_code=200, content={"policies": False})
+            return JSONResponse(status_code=200, content={"policies": []})
+        
+        formatted_policies = [{"policy_id": str(policy.policy_id), "policy_status": policy.policy_status} for policy in policies]
 
-        return JSONResponse(status_code=200, content={"policies": True})
+        return JSONResponse(status_code=200, content={"policies": formatted_policies})
 
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching policies: {str(e)}"
         )
-
 
 @auth_router.get("/Getnotification/{userId}")
 async def notification(userId: UUID, session: AsyncSession = Depends(get_session)):
@@ -654,7 +655,6 @@ async def notification(userId: UUID, session: AsyncSession = Depends(get_session
         )
         messages = result.fetchall()
 
-        print("Raw Messages:", messages)
         serialized_messages = [
             {
                 "notification_uid": str(row.notification_uid),
@@ -663,8 +663,9 @@ async def notification(userId: UUID, session: AsyncSession = Depends(get_session
             }
             for row in messages
         ]
+        if userId in connection_manager.active_connections:
+            await connection_manager.send_personal_message(userId, {"event": "notificationsupdate"})
 
-        print("Serialized Messages:", serialized_messages)
 
         return JSONResponse(status_code=200, content={"message": serialized_messages})
 
@@ -688,10 +689,12 @@ async def clearnotification(userId: UUID, session: AsyncSession = Depends(get_se
             return JSONResponse(status_code=404, content={"message": "No notifications found"})
 
         for msg in messages:
-            msg.delete_status = True
+            await session.delete(msg)
+            # msg.delete_status = True
 
         await session.flush()
         await session.commit()
+        
 
         return JSONResponse(status_code=200, content={"message": "Deleted successfully"})
 
@@ -944,3 +947,4 @@ async def nearestagent(location: str, session: AsyncSession = Depends(get_sessio
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching nearest agents: {str(e)}"
         )
+

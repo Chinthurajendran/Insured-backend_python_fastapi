@@ -17,7 +17,6 @@ async def get_chat_history(
     sender_id: UUID = Query(...),
     session: AsyncSession = Depends(get_session)
 ):
-    print("11111111111111111111111111111111111111")
     print("Fetching chat history for:", receiver_id, sender_id)
     message = await chat_service.get_messages(receiver_id, sender_id, session)
     if not message:

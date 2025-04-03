@@ -828,3 +828,148 @@ async def customercare(
         status_code=200,
         content={"messages": list(unique_senders.values())}
     )
+
+
+
+@agent_router.get("/policiespermonth", response_model=dict)
+async def policygraph(session: AsyncSession = Depends(get_session),
+                      user_details=Depends(access_token_bearer)):
+
+    try:
+        result = await session.execute(
+            select(
+                PolicyDetails.policydetails_uid,
+                PolicyDetails.create_at,
+            ).where((PolicyDetails.policy_status == ApprovalStatus.approved) & 
+                    (PolicyDetails.delete_status == False)&(PolicyDetails.agent_id.isnot(None)))
+        )
+        
+        policies = result.all()  
+
+        policies_data = [
+            {
+                "policydetails_uid": str(policy[0]),  
+                "create_at": policy[1].isoformat() if policy[1] else None,
+            }
+            for policy in policies
+        ]
+
+        return JSONResponse(status_code=200, content={"policies": policies_data})
+
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred while fetching policies: {str(e)}"
+        )
+
+@agent_router.get("/policytakenbyagent", response_model=dict)
+async def policytakenbyagent(session: AsyncSession = Depends(get_session),
+                      user_details=Depends(access_token_bearer)):
+
+    try:
+        result = await session.execute(
+            select(
+                PolicyDetails.policydetails_uid,
+                PolicyDetails.create_at,
+            ).where((PolicyDetails.policy_status == ApprovalStatus.approved) & 
+                    (PolicyDetails.delete_status == False)&(PolicyDetails.agent_id.isnot(None)))
+        )
+        
+        policies = result.all()  
+
+        policies_data = [
+            {
+                "policydetails_uid": str(policy[0]),  
+                "create_at": policy[1].isoformat() if policy[1] else None,
+            }
+            for policy in policies
+        ]
+
+
+
+        return JSONResponse(status_code=200, content={"policies": policies_data})
+
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"An error occurred while fetching policies: {str(e)}"
+        )
+    
+
+@agent_router.get("/policypaymentinfo", response_model=dict)
+async def policypaymentinfo(
+    session: AsyncSession = Depends(get_session), 
+    user_details=Depends(access_token_bearer)
+):
+    try:
+        # Query policy details
+        result = await session.execute(
+            select(
+                PolicyDetails.policydetails_uid,
+                PolicyDetails.policy_status,
+                PolicyDetails.create_at
+            ).where(PolicyDetails.delete_status.is_(False)&(PolicyDetails.agent_id.isnot(None)))
+        )
+        
+        policies = result.fetchall()
+
+        if not policies:
+            return JSONResponse(status_code=200, content={"message": "No policy data found", "policies": []})
+
+        # Process data
+        policies_data = [
+            {
+                "policydetails_uid": str(policy.policydetails_uid), 
+                "policy_status": policy.policy_status,  
+                "create_at": policy.create_at.isoformat() if policy.create_at else None,
+            }
+            for policy in policies
+        ]
+
+        return JSONResponse(status_code=200, content={"policies": policies_data})
+
+    except Exception as e:
+        logger.error(f"Error fetching policy data: {e}", exc_info=True)  # Include stack trace
+        raise HTTPException(
+            status_code=500,
+            detail="An internal server error occurred while fetching policy information."
+        )
+
+
+
+@agent_router.get("/PolicyDetails_list", response_model=dict)
+async def policy_list(session: AsyncSession = Depends(get_session),
+                      user_details=Depends(access_token_bearer)):
+
+    try:
+        result = await session.execute(
+            select(
+                PolicyDetails.policydetails_uid, PolicyDetails.user_id,
+                PolicyDetails.agent_id, PolicyDetails.policy_holder,
+                PolicyDetails.policy_type, PolicyDetails.coverage,
+                PolicyDetails.settlement, PolicyDetails.premium_amount,
+                PolicyDetails.monthly_amount, PolicyDetails.age,
+                PolicyDetails.income_range, PolicyDetails.policy_status,
+                PolicyDetails.payment_status, PolicyDetails.feedback,
+            )
+        )
+
+        policies = result.all()
+
+        policies_data = [dict(policy._asdict()) for policy in policies]
+        for policy in policies_data:
+            policy['policydetails_uid'] = str(policy['policydetails_uid'])
+            policy['user_id'] = str(policy['user_id'])
+            policy['agent_id'] = str(policy['agent_id'])
+            policy['policy_status'] = policy['policy_status'].value
+
+        return JSONResponse(status_code=200, content={"policies": policies_data})
+
+    except Exception as e:
+        logger.error(f"An error occurred: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"An error occurred while fetching policies: {str(e)}"
+        )

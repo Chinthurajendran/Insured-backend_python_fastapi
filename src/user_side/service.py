@@ -18,6 +18,7 @@ import razorpay
 import hmac
 import hashlib
 from typing import List
+from src.messages.connetct_manager import connection_manager
 
 load_dotenv()
 
@@ -252,7 +253,7 @@ class UserService:
                 detail={"message": f"An error occurred: {str(e)}"}
             )
 
-    async def notification_update(self, userid, message, session: AsyncSession):
+    async def notification_update(self, user_id, message, session: AsyncSession):
 
         ist = pytz.timezone("Asia/Kolkata")
         utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
@@ -260,7 +261,7 @@ class UserService:
         local_time_naive = local_time.replace(tzinfo=None)
 
         notification = Notification(
-            user_id=userid,
+            user_id=user_id,
             message=message,
             create_at=local_time_naive
         )
@@ -268,6 +269,12 @@ class UserService:
         session.add(notification)
         await session.commit()
         await session.refresh(notification)
+
+        # if user_id in connection_manager.active_connections:
+        #     await connection_manager.send_personal_message(user_id, {
+        #         "message": message, 
+        #         "created_at": str(notification.create_at)
+        #     })
 
         return notification
 
@@ -427,21 +434,3 @@ class UserService:
                 except Exception as e:
                     raise HTTPException(status_code=500, detail=f"Payment verification failed: {str(e)}")
 
-
-class ConnectionManager:
-    def __init__(self):
-        self.active_connections: List[WebSocket] = []
-
-    async def connect(self, websocket: WebSocket):
-        await websocket.accept()
-        self.active_connections.append(websocket)
-
-    def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
-
-    async def send_message(self, message: str, websocket: WebSocket):
-        await websocket.send_text(message)
-
-    async def broadcast(self, message: str):
-        for connection in self.active_connections:
-            await connection.send_text(message)
