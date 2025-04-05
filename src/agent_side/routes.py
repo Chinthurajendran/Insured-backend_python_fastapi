@@ -904,7 +904,6 @@ async def policypaymentinfo(
     user_details=Depends(access_token_bearer)
 ):
     try:
-        # Query policy details
         result = await session.execute(
             select(
                 PolicyDetails.policydetails_uid,
@@ -918,7 +917,6 @@ async def policypaymentinfo(
         if not policies:
             return JSONResponse(status_code=200, content={"message": "No policy data found", "policies": []})
 
-        # Process data
         policies_data = [
             {
                 "policydetails_uid": str(policy.policydetails_uid), 
@@ -973,3 +971,39 @@ async def policy_list(session: AsyncSession = Depends(get_session),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching policies: {str(e)}"
         )
+    
+
+
+@agent_router.post("/RazorpayPaymentCreation")
+async def RazorpayPayment(payment: PaymentRequest, session: AsyncSession = Depends(get_session)):
+    """Creates an order in Razorpay."""
+    try:
+        order_data = {
+            "amount": payment.amount * 100,
+            "currency": payment.currency,
+            "receipt": payment.receipt,
+            "payment_capture": 1
+        }
+        payment = await user_service.payment_creation(order_data, session)
+
+        return payment
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+@agent_router.post("/verify-payment/{PolicyId}")
+async def verify_payment(
+    PolicyId: UUID,
+    request_data: PaymentVerificationRequest,
+    session: AsyncSession = Depends(get_session)
+):
+    try:
+        verification = await user_service.payment_verification(PolicyId, request_data, session)
+
+        if verification:
+            return {"status": "success", "message": "Payment verified"}
+
+        raise HTTPException(
+            status_code=400, detail="Invalid payment signature")
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Internal server error")

@@ -861,7 +861,6 @@ async def policypaymentinfo(
     user_details=Depends(access_token_bearer)
 ):
     try:
-        # Query policy details
         result = await session.execute(
             select(
                 PolicyDetails.policydetails_uid,
@@ -875,7 +874,6 @@ async def policypaymentinfo(
         if not policies:
             return JSONResponse(status_code=200, content={"message": "No policy data found", "policies": []})
 
-        # Process data
         policies_data = [
             {
                 "policydetails_uid": str(policy.policydetails_uid), 
@@ -888,7 +886,7 @@ async def policypaymentinfo(
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
     except Exception as e:
-        logger.error(f"Error fetching policy data: {e}", exc_info=True)  # Include stack trace
+        logger.error(f"Error fetching policy data: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="An internal server error occurred while fetching policy information."

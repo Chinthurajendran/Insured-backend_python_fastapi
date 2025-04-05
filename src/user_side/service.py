@@ -270,12 +270,6 @@ class UserService:
         await session.commit()
         await session.refresh(notification)
 
-        # if user_id in connection_manager.active_connections:
-        #     await connection_manager.send_personal_message(user_id, {
-        #         "message": message, 
-        #         "created_at": str(notification.create_at)
-        #     })
-
         return notification
 
     async def payment_creation(self, order_data, session: AsyncSession):
@@ -297,19 +291,16 @@ class UserService:
             session: AsyncSession
         ) -> bool:
             try:
-                # Generate HMAC signature
                 generated_signature = hmac.new(
                     RAZORPAY_KEY_SECRET.encode(),
                     f"{request_data.order_id}|{request_data.payment_id}".encode(),
                     hashlib.sha256
                 ).hexdigest()
 
-                # Convert UTC to IST
                 ist = pytz.timezone("Asia/Kolkata")
                 utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
                 local_time = utc_time.astimezone(ist).replace(tzinfo=None)
 
-                # Secure comparison of signatures
                 if hmac.compare_digest(generated_signature, request_data.signature):
 
                     transaction = Transaction(
@@ -322,7 +313,8 @@ class UserService:
 
                     policy_data = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == PolicyId))
                     policys = policy_data.scalars().first()
-                    if not policys:  # Ensure PolicyId exists
+                    
+                    if not policys:
                             raise HTTPException(status_code=404, detail="Policy not found")
                     policys.payment_status = True
                     
@@ -332,7 +324,7 @@ class UserService:
                     
                     return True
                 
-                return False  # Instead of `raise False`
+                return False
             
             except Exception as e:
                 raise HTTPException(status_code=500, detail=f"Payment verification failed: {str(e)}")
@@ -344,19 +336,16 @@ class UserService:
                 session: AsyncSession
             ) -> bool:
                 try:
-                    # Generate HMAC signature
                     generated_signature = hmac.new(
                         RAZORPAY_KEY_SECRET.encode(),
                         f"{request_data.order_id}|{request_data.payment_id}".encode(),
                         hashlib.sha256
                     ).hexdigest()
 
-                    # Convert UTC to IST
                     ist = pytz.timezone("Asia/Kolkata")
                     utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
                     local_time = utc_time.astimezone(ist).replace(tzinfo=None)
 
-                    # Secure comparison of signatures
                     if hmac.compare_digest(generated_signature, request_data.signature):
 
                         transaction = Wallet(
@@ -374,7 +363,7 @@ class UserService:
                         
                         return True
                     
-                    return False  # Instead of `raise False`
+                    return False
                 
                 except Exception as e:
                     raise HTTPException(status_code=500, detail=f"Payment verification failed: {str(e)}")
@@ -388,19 +377,16 @@ class UserService:
                 session: AsyncSession
             ) -> bool:
                 try:
-                    # Generate HMAC signature
                     generated_signature = hmac.new(
                         RAZORPAY_KEY_SECRET.encode(),
                         f"{request_data.order_id}|{request_data.payment_id}".encode(),
                         hashlib.sha256
                     ).hexdigest()
 
-                    # Convert UTC to IST
                     ist = pytz.timezone("Asia/Kolkata")
                     utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
                     local_time = utc_time.astimezone(ist).replace(tzinfo=None)
 
-                    # Secure comparison of signatures
                     if hmac.compare_digest(generated_signature, request_data.signature):
                         if transaction_type == 'withdraw':
 
@@ -429,7 +415,7 @@ class UserService:
                         
                         return True
                     
-                    return False  # Instead of `raise False`
+                    return False 
                 
                 except Exception as e:
                     raise HTTPException(status_code=500, detail=f"Payment verification failed: {str(e)}")

@@ -21,6 +21,12 @@ from sqlmodel import select
 from src.user_side.service import UserService
 from src.user_side.routes import notification
 from src.admin_side.models import PolicyDetails
+import os
+import asyncpg
+DATABASE_URL =os.getenv("DATABASE_URL1")
+import asyncio
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
 
 chat_service = ChatService() 
 user_service = UserService()
@@ -53,12 +59,6 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from fastapi.staticfiles import StaticFiles
-from pathlib import Path
-
-
-
-import os
 
 UPLOAD_DIR = os.path.join(os.getcwd(), "uploads")
 
@@ -83,7 +83,6 @@ async def chat_websocket_endpoint(
     user_id: str, 
     session: AsyncSession = Depends(get_session)
 ):
-
     await connection_manager.connect(user_id, websocket)
 
     try:
@@ -97,7 +96,6 @@ async def chat_websocket_endpoint(
 
     except WebSocketDisconnect:
         connection_manager.disconnect(user_id,websocket)
-        print(f"Client {user_id} disconnected")
 
 
 @app.websocket("/ws/webrtc/{user_id}")
@@ -114,12 +112,10 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     except WebSocketDisconnect:
         connection_manager.disconnect(user_id, websocket)
     except Exception as e:
-        print(f"Error: {e}")
         connection_manager.disconnect(user_id, websocket)
 
 @app.websocket("/ws/webrtcvedio/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
-    """WebRTC Signaling WebSocket"""
     await connection_manager.connect(user_id, websocket)
 
     try:
@@ -132,77 +128,16 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     except WebSocketDisconnect:
         connection_manager.disconnect(user_id, websocket)
     except Exception as e:
-        print(f"Error: {e}")
         connection_manager.disconnect(user_id, websocket)
 
-# import asyncio
 
-# @app.websocket("/ws/notification/{user_id}")
-# async def chat_websocket_endpoint(
-#     websocket: WebSocket, 
-#     user_id: str, 
-#     session: AsyncSession = Depends(get_session)
-# ):
-#     user_id = str(user_id)  # Keep as string for dictionary key consistency
-
-#     await connection_manager.connect(user_id, websocket)  # Connection Manager handles accept()
-
-#     try:
-#         while True:
-#             async with session.begin():
-#                 result = await session.execute(
-#                     select(Notification.message,Notification.create_at)
-#                     .where((Notification.user_id == user_id) & (Notification.delete_status == False))
-#                 )
-#                 new_notifications = result.scalars().all()  # Fetch only the message column
-
-
-#                 for notification in new_notifications:  # Iterate over list items
-#                     await websocket.send_json({
-#                         "message": notification.message,
-#                         "created_at": str(notification.create_at)
-#                     })
-
-
-#             await asyncio.sleep(5)
-
-#     except WebSocketDisconnect:
-#         print(f"Client {user_id} disconnected")
-#         connection_manager.disconnect(user_id, websocket) # Ensure disconnection is handled
-
-
-# @app.websocket("/ws/notification/{user_id}")
-# async def websocket_endpoint(websocket: WebSocket, user_id: str):
-#     await websocket.accept()
-#     await connection_manager.connect(user_id, websocket)
-
-#     # Retrieve past notifications for this user
-#     user_specific_notifications = notification(user_id)  # Fetch from DB
-#     for notifications in user_specific_notifications:
-#         await websocket.send_text(notifications)
-
-#     try:
-#         while True:
-#             data = await websocket.receive_text()
-#             await connection_manager.send_personal_message(user_id, {"message": data})  # Send only to this user
-#     except:
-#         connection_manager.disconnect(user_id, websocket)
-
-
-import os
-import asyncpg
-DATABASE_URL =os.getenv("DATABASE_URL1")
-import asyncio
 
 async def listen_to_notifications(user_id, websocket: WebSocket):
-    """ Listens for PostgreSQL notifications and sends them to WebSocket """
     try:
         conn = await asyncpg.connect(DATABASE_URL)
-        print("Connected to PostgreSQL for LISTEN/NOTIFY")
 
         async def callback(connection, pid, channel, payload):
-            print(f"Received notification: {payload}")  # Debugging log
-            notification = json.loads(payload)  # Convert JSON string to dict
+            notification = json.loads(payload)
 
             if str(notification["user_id"]) == str(user_id):
                 await websocket.send_json(notification)
@@ -210,7 +145,7 @@ async def listen_to_notifications(user_id, websocket: WebSocket):
         await conn.add_listener("notification_channel", callback)
 
         while True:
-            await asyncio.sleep(5)  # Prevent CPU overuse
+            await asyncio.sleep(5) 
 
     except Exception as e:
         print(f"Error in listen_to_notifications: {e}")
@@ -223,19 +158,14 @@ async def listen_to_notifications(user_id, websocket: WebSocket):
 
 @app.websocket("/ws/notification/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: uuid.UUID):
-    """ WebSocket endpoint for user notifications """
     await websocket.accept()
-    print(f"WebSocket connected for user {user_id}")
 
     task = asyncio.create_task(listen_to_notifications(user_id, websocket))
 
     try:
         while True:
-            message = await websocket.receive_text()  # Keeps connection open
-            print(f"Received WebSocket message: {message}")
-
+            message = await websocket.receive_text() 
     except WebSocketDisconnect:
-        print(f"WebSocket disconnected for user {user_id}")
         task.cancel()
 
 
@@ -245,63 +175,27 @@ async def chat_websocket_endpoint(
     agentId: str, 
     session: AsyncSession = Depends(get_session)
 ):
-    """ WebSocket for real-time customer search suggestions. """
-    
-    # Accept WebSocket connection
     await connection_manager.connect(agentId, websocket)
-    print(f"✅ WebSocket connected for Agent: {agentId}")
-
+  
     try:
         while True:
-            print("⏳ Waiting for data...")  
-
-            # Receive data from frontend
             data = await websocket.receive_json() 
             content = data.get("content", "").strip()
-
-            print(f"📩 Received query: {content}")
-
-            # Validate input
             if not content:
                 await websocket.send_json({"error": "Query parameter is required."})
-                continue  # Wait for next message
-
-            # Fetch matching emails from DB
+                continue 
             try:
                 stmt = select(PolicyDetails.email).where(
                     PolicyDetails.email.ilike(f"%{content}%")
                 ).limit(5)
 
                 result = await session.execute(stmt)
-                emails = result.scalars().all()
+                emails = result.scalars().all() 
 
-                # Send suggestions to WebSocket client
                 await websocket.send_json({"suggestions": emails})  
-                print(f"📤 Sent suggestions: {emails}")
 
             except Exception as e:
-                print(f"❌ Database query error: {e}")
                 await websocket.send_json({"error": "Database query failed."})
 
     except WebSocketDisconnect:
         connection_manager.disconnect(agentId, websocket)
-        print(f"⚠️ WebSocket disconnected for Agent: {agentId}")
-
-
-
-# @agent_router.get("/search-suggestions", response_model=List[str])
-# async def search_suggestions(query: str, session: AsyncSession = Depends(get_session)):
-
-#     query = query.strip()
-
-#     if not query:
-#         raise HTTPException(
-#             status_code=400, detail="Query parameter is required.")
-
-#     stmt = select(PolicyDetails.email).where(
-#         PolicyDetails.email.ilike(f"%{query}%")).limit(5)
-
-#     result = await session.execute(stmt)
-#     emails = result.scalars().all()
-
-#     return emails if emails else []

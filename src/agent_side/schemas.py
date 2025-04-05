@@ -74,3 +74,15 @@ class RestpasswordModel(BaseModel):
 
 class CutomerDataRequest(BaseModel):
     email: str
+
+class PaymentRequest(BaseModel):
+    amount: int
+    currency: str = "INR"
+    receipt: str
+
+
+class PaymentVerificationRequest(BaseModel):
+    order_id: str
+    amount: int
+    payment_id: str
+    signature: str

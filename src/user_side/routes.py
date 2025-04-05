@@ -94,16 +94,10 @@ async def login_user(login_data: UserLoginModel, session: AsyncSession = Depends
                 refresh=True,
                 expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
             )
-
-        
-            # print(f"user_access_token type: {type(user_access_token)}")
-            # print(f"user_refresh_token type: {type(user_refresh_token)}")
-
-
-        if isinstance(user_access_token, bytes):
-            user_access_token = user_access_token.decode("utf-8")
-        if isinstance(user_refresh_token, bytes):
-            user_refresh_token = user_refresh_token.decode("utf-8")
+            if isinstance(user_access_token, bytes):
+                user_access_token = user_access_token.decode("utf-8")
+            if isinstance(user_refresh_token, bytes):
+                user_refresh_token = user_refresh_token.decode("utf-8")
 
             return JSONResponse(
                 status_code=status.HTTP_200_OK,
@@ -153,7 +147,7 @@ async def password_recovery(user_email: Passwordrecovery,
     fm = FastMail(mail_config)
     try:
         await fm.send_message(message)
-        await session.commit()  # Ensure session is committed
+        await session.commit() 
     except Exception as e:
         raise HTTPException(
             status_code=500, detail="Failed to send password reset email")
@@ -419,9 +413,6 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
     for policy in policies:
         try:
             min_age, max_age = map(int, policy.age_group.split('-'))
-            print(min_age)
-            print(max_age)
-            print(age)
             if min_age <= age <= max_age:
                 policy_id = str(policy.policy_uid)
                 coverage = policy.coverage
@@ -431,7 +422,7 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
                 n = 12
                 t = int(coverage) - age
 
-                if t > 0:  # Ensure valid term
+                if t > 0: 
                     monthly_payment = (premium_amount * (r / n)) / \
                         (1 - pow(1 + (r / n), -n * t))
                 else:
@@ -448,7 +439,7 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
             print(f"Invalid age group format: {policy.age_group}")
 
     if not matching_policies:
-        return JSONResponse(status_code=404, content={"message": "No matching policies found"})
+        return JSONResponse(status_code=200, content={"message": "No matching policies found"})
     return JSONResponse(status_code=200, content={"matching_policies": matching_policies})
 
 
@@ -621,7 +612,6 @@ async def policyinfo_list(session: AsyncSession = Depends(get_session)):
 @auth_router.get("/UserPolicyStatus/{userId}")
 async def Userpolicystatus(userId: UUID, session: AsyncSession = Depends(get_session)):
     try:
-        # Fetch policies with 'approved' or 'processing' statuses for a specific user
         result = await session.execute(
             select(PolicyDetails.policy_status, PolicyDetails.policy_id).where(
                 PolicyDetails.user_id == userId,
@@ -690,7 +680,6 @@ async def clearnotification(userId: UUID, session: AsyncSession = Depends(get_se
 
         for msg in messages:
             await session.delete(msg)
-            # msg.delete_status = True
 
         await session.flush()
         await session.commit()
@@ -750,8 +739,6 @@ async def PaymentUpdation(
         ist = pytz.timezone("Asia/Kolkata")
         utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
         local_time = utc_time.astimezone(ist).replace(tzinfo=None)
-
-        # Fetch only policies where payment is still True and is overdue
         policy_data = await session.execute(
             select(PolicyDetails).where(
                 PolicyDetails.payment_status == True,
@@ -765,11 +752,10 @@ async def PaymentUpdation(
         if not policies:
             return {"message": "No policies require payment status update"}
 
-        # Update all policies in bulk
         for policy in policies:
             policy.payment_status = False
 
-        await session.commit()  # Save changes
+        await session.commit()
 
         return {"message": f"{len(policies)} payment statuses updated successfully"}
 
@@ -781,7 +767,6 @@ async def PaymentUpdation(
 @auth_router.get("/WalletInfo/{userId}")
 async def walletinfo(userId: UUID, session: AsyncSession = Depends(get_session)):
     try:
-        # Fetch transactions
         result = await session.execute(
             select(
                 Wallet.transaction_uid,
@@ -793,7 +778,6 @@ async def walletinfo(userId: UUID, session: AsyncSession = Depends(get_session))
         )
         wallet = result.fetchall()
 
-        # Serialize transactions
         wallet_data = [
             {
                 "transaction_uid": str(row.transaction_uid),
@@ -804,8 +788,6 @@ async def walletinfo(userId: UUID, session: AsyncSession = Depends(get_session))
             }
             for row in wallet
         ]
-
-        # Calculate total balance (sum of debits)
         total_debit_result = await session.execute(
             select(func.sum(Wallet.amount)).where(
                 (Wallet.user_id == userId) & (
@@ -866,7 +848,6 @@ async def wallet_verify_payment_withdraw(
     session: AsyncSession = Depends(get_session)
 ):
     try:
-                        # Calculate total balance (sum of debits)
         total_debit_result = await session.execute(
             select(func.sum(Wallet.amount)).where(
                 (Wallet.user_id == userId) & (
@@ -906,7 +887,6 @@ async def wallet_verify_payment_withdraw(
 @auth_router.get("/nearestagent/{location}")
 async def nearestagent(location: str, session: AsyncSession = Depends(get_session)):
     try:
-        # Parse location into latitude and longitude
         try:
             lat, lon = map(float, location.split(","))
         except ValueError:
@@ -915,16 +895,14 @@ async def nearestagent(location: str, session: AsyncSession = Depends(get_sessio
                 detail="Invalid location format. Expected 'latitude,longitude'."
             )
 
-        # Query the nearest available agent (not busy)
         result = await session.execute(
             select(AgentTable.agent_id, AgentTable.latitude, AgentTable.longitude)
             .where((AgentTable.busy_status == False) & (AgentTable.agent_login_status == True) )  # Only available agents
             .order_by(func.abs(AgentTable.latitude - lat) + func.abs(AgentTable.longitude - lon))
-            .limit(1)  # Get the closest one
+            .limit(1) 
         )
         nearest_agent = result.first()
 
-        # If no free agents found, get the closest one (even if busy)
         if not nearest_agent:
             result = await session.execute(
                 select(AgentTable.agent_id, AgentTable.latitude, AgentTable.longitude)
@@ -932,8 +910,6 @@ async def nearestagent(location: str, session: AsyncSession = Depends(get_sessio
                 .limit(1)
             )
             nearest_agent = result.first()
-
-        # If still no agent found, return an error response
         if not nearest_agent:
             return JSONResponse(status_code=404, content={"message": "No agents available"})
 
@@ -942,7 +918,7 @@ async def nearestagent(location: str, session: AsyncSession = Depends(get_sessio
 
     except Exception as e:
         print(f"Error: {e}")
-        traceback.print_exc()  # Prints detailed error traceback in logs
+        traceback.print_exc() 
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching nearest agents: {str(e)}"

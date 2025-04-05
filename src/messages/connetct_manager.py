@@ -13,7 +13,7 @@ class ConnectionManager:
 
     def disconnect(self, user_id: str, websocket: WebSocket):
         self.active_connections[user_id].remove(websocket)
-        if not self.active_connections[user_id]:  # Remove user if no connections remain
+        if not self.active_connections[user_id]:
             del self.active_connections[user_id]
 
     async def send_personal_message(self, user_id: str, message: dict):
