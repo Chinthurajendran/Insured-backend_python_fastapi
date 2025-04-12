@@ -16,6 +16,10 @@ class ConnectionManager:
         if not self.active_connections[user_id]:
             del self.active_connections[user_id]
 
+    async def disconnect_all(self, user_id: str):
+        if user_id in self.active_connections:
+            del self.active_connections[user_id]
+
     async def send_personal_message(self, user_id: str, message: dict):
         if user_id in self.active_connections:
             for connection in self.active_connections[user_id]:

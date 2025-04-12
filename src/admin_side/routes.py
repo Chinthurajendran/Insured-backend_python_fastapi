@@ -654,13 +654,14 @@ async def agent_approval(PolicyId: UUID, session: AsyncSession = Depends(get_ses
         raise HTTPException(status_code=404, detail="Policy not found")
 
     policy.policy_status = ApprovalStatus.approved
-    policy.payment_status = True
 
-    user_id = policy.user_id
-    user_result = await session.execute(select(usertable).where(usertable.user_id == user_id))
-    user = user_result.scalars().first()
 
-    user.policy_status = True
+    message = "Congratulations! Your policy has been approved successfully."
+    notification = await admin_service.notification_update(policy.user_id, message, session)
+
+    if not notification:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Failed to create notification")
 
     await session.commit()
     return JSONResponse(status_code=200, content={"message": "Updated."})
@@ -683,6 +684,13 @@ async def agent_rejected(PolicyId: UUID, reason: str = Form(...),
 
     policy.policy_status = ApprovalStatus.rejected
     policy.feedback = reason
+
+    message = "We regret to inform you that your policy application has been rejected."
+    notification = await admin_service.notification_update(policy.user_id, message, session)
+    
+    if not notification:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                            detail="Failed to create notification")
 
     await session.commit()
     return JSONResponse(status_code=200, content={"message": "Updated."})

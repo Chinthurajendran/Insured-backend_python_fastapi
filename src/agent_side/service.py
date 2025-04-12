@@ -22,6 +22,7 @@ from src.mail import mail_config
 from botocore.exceptions import ClientError
 import boto3
 import pytz
+import asyncio
 
 load_dotenv()
 
@@ -119,6 +120,25 @@ class AgentService:
 
         return new_agent
 
+    async def notification_update(self, user_id, message, session: AsyncSession):
+
+        ist = pytz.timezone("Asia/Kolkata")
+        utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        local_time = utc_time.astimezone(ist)
+        local_time_naive = local_time.replace(tzinfo=None)
+
+        notification = Notification(
+            user_id=user_id,
+            message=message,
+            create_at=local_time_naive
+        )
+
+        session.add(notification)
+        await session.commit()
+        await session.refresh(notification)
+
+        return notification
+
 
     async def profile_update(self, agent_data: AgentProfileCreateRequest, 
                              agentID, image: UploadFile, session: AsyncSession):
@@ -156,6 +176,13 @@ class AgentService:
                 await session.rollback() 
                 traceback.print_exc() 
                 return {"error": str(e)}
+    
+    
+    async def upload_to_s3(self,file: UploadFile, folder_name: str) -> str:
+        file_path = f"{folder_name}/{file.filename}"
+        s3_client.upload_fileobj(file.file, BUCKET_NAME, file_path)
+        file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
+        return file_url
 
 
     async def ExistingUserPolicyCreation(self, agent_data: ExistingUserPolicyRequest, 
@@ -168,28 +195,24 @@ class AgentService:
                                 nominee_address_proof: UploadFile,
                                 session: AsyncSession):
         try:
-            async def upload_to_s3(file: UploadFile, folder_name: str) -> str:
-                file_path = f"{folder_name}/{file.filename}"
-                s3_client.upload_fileobj(file.file, BUCKET_NAME, file_path)
-                file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
-                return file_url
-
             code = random_code()
-            
             folder_name = f"Agent/PolicyDocuments/EUPC{code}"
 
-            id_proof_url = await upload_to_s3(id_proof, folder_name) if id_proof else None
-            passbook_url = await upload_to_s3(passbook, folder_name) if passbook else None
-            income_proof_url = await upload_to_s3(income_proof, folder_name) if income_proof else None
-            photo_url = await upload_to_s3(photo, folder_name) if photo else None
-            pan_card_url = await upload_to_s3(pan_card, folder_name) if pan_card else None
-            nominee_address_proof_url = await upload_to_s3(nominee_address_proof, folder_name) if nominee_address_proof else None
+            id_proof_url = await self.upload_to_s3(id_proof, folder_name) if id_proof else None
+            passbook_url = await self.upload_to_s3(passbook, folder_name) if passbook else None
+            income_proof_url = await self.upload_to_s3(income_proof, folder_name) if income_proof else None
+            photo_url = await self.upload_to_s3(photo, folder_name) if photo else None
+            pan_card_url = await self.upload_to_s3(pan_card, folder_name) if pan_card else None
+            nominee_address_proof_url = await self.upload_to_s3(nominee_address_proof, folder_name) if nominee_address_proof else None
 
-            policy_result = await session.execute(select(policytable).where(policytable.policy_name == agent_data.policy_type))
+            policy_result = await session.execute(
+                select(policytable).where(policytable.policy_name == agent_data.policy_type))
             policys = policy_result.scalars().first()
-            users_result = await session.execute(select(usertable).where(usertable.email == agent_data.email))
-            users = users_result.scalars().first()
 
+            users_result = await session.execute(
+                select(usertable).where(usertable.email == agent_data.email))
+            users = users_result.scalars().first()
+         
             ist = pytz.timezone("Asia/Kolkata")
             utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
             local_time = utc_time.astimezone(ist)
@@ -248,6 +271,8 @@ class AgentService:
             )
 
             session.add(new_policy)
+            message = "Your policy has been submitted successfully. Thank you for registering!"
+            notification = await self.notification_update(users.user_id, message, session)
             await session.flush() 
             await session.commit()
 
@@ -272,6 +297,7 @@ class AgentService:
         update_at = local_time_naive
 
         def generate_strong_password(length=10):
+
             alphabet = string.ascii_letters + string.digits + string.punctuation
             return ''.join(secrets.choice(alphabet) for _ in range(length))
 

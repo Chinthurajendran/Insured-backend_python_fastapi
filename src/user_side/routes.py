@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, status, Form, UploadFile, File,Query,WebSocket, WebSocketDisconnect,FastAPI
+from fastapi import APIRouter, Depends, status, Form, UploadFile, File, Query, WebSocket, WebSocketDisconnect, FastAPI
 from .schemas import *
 from sqlmodel.ext.asyncio.session import AsyncSession
 from src.db.database import get_session
@@ -27,7 +27,7 @@ from src.admin_side.models import *
 import pytz
 from sqlalchemy.sql import func
 from sqlalchemy import text
-from src.agent_side.models import*
+from src.agent_side.models import *
 from src.messages.connetct_manager import connection_manager
 
 
@@ -45,6 +45,7 @@ async def create_user_account(user_data: UserCreate, session: AsyncSession = Dep
     username = user_data.username.lower()
     user_exists_with_email = await user_service.exist_email(email, session)
     user_exists_with_username = await user_service.exist_username(username, session)
+
     if user_exists_with_email:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN, detail="Email already exists")
@@ -56,7 +57,7 @@ async def create_user_account(user_data: UserCreate, session: AsyncSession = Dep
             status_code=status.HTTP_400_BAD_REQUEST, detail="Passwords do not match")
 
     new_user = await user_service.create_user(user_data, session)
-    
+
     return JSONResponse(
         status_code=status.HTTP_201_CREATED,
         content={
@@ -72,8 +73,8 @@ async def login_user(login_data: UserLoginModel, session: AsyncSession = Depends
     user = await user_service.get_user_by_email(email, session)
     if user.block_status:
         raise HTTPException(status_code=404, detail="User is blocked")
-    
-    if user is not None:    
+
+    if user is not None:
         password_vaild = verify_password(password, user.password)
 
         if password_vaild:
@@ -124,8 +125,8 @@ async def password_recovery(user_email: Passwordrecovery,
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     result = await session.execute(
-    select(usertable)
-    .where(usertable.email == email))
+        select(usertable)
+        .where(usertable.email == email))
 
     user = result.scalars().first()
 
@@ -147,7 +148,7 @@ async def password_recovery(user_email: Passwordrecovery,
     fm = FastMail(mail_config)
     try:
         await fm.send_message(message)
-        await session.commit() 
+        await session.commit()
     except Exception as e:
         raise HTTPException(
             status_code=500, detail="Failed to send password reset email")
@@ -299,6 +300,7 @@ async def logout_agent(
     user = result.scalars().first()
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
+    await connection_manager.disconnect_all(str(user_id))
 
     await session.commit()
 
@@ -422,7 +424,7 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
                 n = 12
                 t = int(coverage) - age
 
-                if t > 0: 
+                if t > 0:
                     monthly_payment = (premium_amount * (r / n)) / \
                         (1 - pow(1 + (r / n), -n * t))
                 else:
@@ -622,8 +624,9 @@ async def Userpolicystatus(userId: UUID, session: AsyncSession = Depends(get_ses
 
         if not policies:
             return JSONResponse(status_code=200, content={"policies": []})
-        
-        formatted_policies = [{"policy_id": str(policy.policy_id), "policy_status": policy.policy_status} for policy in policies]
+
+        formatted_policies = [{"policy_id": str(
+            policy.policy_id), "policy_status": policy.policy_status} for policy in policies]
 
         return JSONResponse(status_code=200, content={"policies": formatted_policies})
 
@@ -632,6 +635,7 @@ async def Userpolicystatus(userId: UUID, session: AsyncSession = Depends(get_ses
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching policies: {str(e)}"
         )
+
 
 @auth_router.get("/Getnotification/{userId}")
 async def notification(userId: UUID, session: AsyncSession = Depends(get_session)):
@@ -655,7 +659,6 @@ async def notification(userId: UUID, session: AsyncSession = Depends(get_session
         ]
         if userId in connection_manager.active_connections:
             await connection_manager.send_personal_message(userId, {"event": "notificationsupdate"})
-
 
         return JSONResponse(status_code=200, content={"message": serialized_messages})
 
@@ -683,7 +686,6 @@ async def clearnotification(userId: UUID, session: AsyncSession = Depends(get_se
 
         await session.flush()
         await session.commit()
-        
 
         return JSONResponse(status_code=200, content={"message": "Deleted successfully"})
 
@@ -723,6 +725,7 @@ async def verify_payment(
 
         if verification:
             return {"status": "success", "message": "Payment verified"}
+        await session.commit()
 
         raise HTTPException(
             status_code=400, detail="Invalid payment signature")
@@ -806,7 +809,6 @@ async def walletinfo(userId: UUID, session: AsyncSession = Depends(get_session))
 
         balance = total_debit - total_credit
 
-
         return JSONResponse(
             status_code=200,
             content={"wallet": wallet_data, "balance": balance}
@@ -845,6 +847,7 @@ async def wallet_verify_payment_withdraw(
     userId: UUID,
     request_data: PaymentVerificationRequest,
     type: str = Query(..., regex="^(wallet_policy|withdraw)$"),
+    policy_id: Optional[UUID] = Query(None),
     session: AsyncSession = Depends(get_session)
 ):
     try:
@@ -867,12 +870,14 @@ async def wallet_verify_payment_withdraw(
 
         balance = total_debit - total_credit-amount
         if balance <= 0:
+            message = f"Transaction failed due to insufficient balance. You attempted to withdraw ₹{amount}, but your available balance is ₹{balance}."
+            notification = await user_service.notification_update(userId, message, session)
             return JSONResponse(
                 status_code=400,
                 content={"error": "Insufficient balance", "balance": balance}
             )
         else:
-            verification = await user_service.wallet_payment_withdraw(userId, request_data,type, session)
+            verification = await user_service.wallet_payment_withdraw(userId, request_data, type,session,policy_id)
 
             if verification:
                 return {"status": "success", "message": "Payment verified"}
@@ -897,15 +902,17 @@ async def nearestagent(location: str, session: AsyncSession = Depends(get_sessio
 
         result = await session.execute(
             select(AgentTable.agent_id, AgentTable.latitude, AgentTable.longitude)
-            .where((AgentTable.busy_status == False) & (AgentTable.agent_login_status == True) )  # Only available agents
+            # Only available agents
+            .where((AgentTable.busy_status == False) & (AgentTable.agent_login_status == True))
             .order_by(func.abs(AgentTable.latitude - lat) + func.abs(AgentTable.longitude - lon))
-            .limit(1) 
+            .limit(1)
         )
         nearest_agent = result.first()
 
         if not nearest_agent:
             result = await session.execute(
-                select(AgentTable.agent_id, AgentTable.latitude, AgentTable.longitude)
+                select(AgentTable.agent_id, AgentTable.latitude,
+                       AgentTable.longitude)
                 .order_by(func.abs(AgentTable.latitude - lat) + func.abs(AgentTable.longitude - lon))
                 .limit(1)
             )
@@ -918,9 +925,8 @@ async def nearestagent(location: str, session: AsyncSession = Depends(get_sessio
 
     except Exception as e:
         print(f"Error: {e}")
-        traceback.print_exc() 
+        traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching nearest agents: {str(e)}"
         )
-

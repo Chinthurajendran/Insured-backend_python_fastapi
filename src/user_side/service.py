@@ -19,6 +19,7 @@ import hmac
 import hashlib
 from typing import List
 from src.messages.connetct_manager import connection_manager
+from fastapi import Query
 
 load_dotenv()
 
@@ -108,46 +109,52 @@ class UserService:
 
         return new_user
 
-    async def profile_update(self, user_data: ProfileCreateRequest, user_Id, image: UploadFile, session: AsyncSession):
+    async def profile_update(
+        self,
+        user_data: ProfileCreateRequest,
+        user_Id: UUID,
+        image: Optional[UploadFile],
+        session: AsyncSession
+    ):
         try:
-            if image is not None:
+            file_url = None
+            if image:
                 folder_name = "Users/"
-
                 file_path = f"{folder_name}{image.filename}"
-
                 s3_client.upload_fileobj(image.file, BUCKET_NAME, file_path)
                 file_url = f"https://{BUCKET_NAME}.s3.amazonaws.com/{file_path}"
 
-            result = await session.execute(select(usertable).where(usertable.user_id == user_Id))
+            result = await session.execute(
+                select(usertable).where(usertable.user_id == user_Id)
+            )
             user = result.scalars().first()
 
             if not user:
                 return {"error": "User not found"}
 
-            user.username = user_data.username
-            user.email = user_data.email
-            user.phone = user_data.phone
-            user.gender = user_data.gender
-            user.date_of_birth = user_data.date_of_birth
-            user.city = user_data.city
-            user.marital_status = user_data.marital_status
-            user.annual_income = user_data.annual_income
-            if image is not None:
+            for field in user_data.__dict__:
+                setattr(user, field, getattr(user_data, field))
+
+            if file_url:
                 user.image = file_url
+
             user.profile_status = True
 
             session.add(user)
-            await session.flush()
             await session.commit()
 
             return {"message": "Profile updated successfully"}
 
         except Exception as e:
             await session.rollback()
-            traceback.print_exc()
-            return {"error": str(e)}
+            raise HTTPException(
+                status_code=500,
+                detail=f"Failed to update profile: {str(e)}"
+            )
 
-    async def PolicyCreation(self, user_data: PolicyRegistration,
+
+    async def PolicyCreation(self, 
+                             user_data: PolicyRegistration,
                              policyId,
                              userId,
                              id_proof: UploadFile,
@@ -240,10 +247,17 @@ class UserService:
             )
 
             session.add(new_policy)
+
+            message = "Your policy has been submitted successfully. Thank you for registering!"
+            notification = await self.notification_update(users.user_id, message, session)
+
+            if not notification:
+                raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                                    detail="Failed to create notification")
             await session.flush()
             await session.commit()
 
-            return {"message": "Profile updated successfully"}
+            return {"message": "Policy updated successfully"}
 
         except Exception as e:
             await session.rollback()
@@ -313,6 +327,9 @@ class UserService:
 
                     policy_data = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == PolicyId))
                     policys = policy_data.scalars().first()
+
+                    message = f"₹{int(request_data.amount) // 100} has been successfully paid towards your policy."
+                    notification = await self.notification_update(policys.user_id, message, session)
                     
                     if not policys:
                             raise HTTPException(status_code=404, detail="Policy not found")
@@ -356,7 +373,10 @@ class UserService:
                             create_at=local_time,
                             update_at=local_time
                         )
-                        
+
+                        message = f"You've successfully added ₹{int(request_data.amount) // 100} to your wallet. Happy spending!"
+                        notification = await self.notification_update(userId, message, session)
+
                         session.add(transaction)
                         await session.commit()
                         await session.refresh(transaction)
@@ -374,7 +394,8 @@ class UserService:
                 userId: UUID, 
                 request_data: PaymentVerificationRequest,
                 transaction_type:str, 
-                session: AsyncSession
+                session: AsyncSession,
+                policy_id: Optional[UUID] = Query(None)
             ) -> bool:
                 try:
                     generated_signature = hmac.new(
@@ -398,6 +419,9 @@ class UserService:
                                 create_at=local_time,
                                 update_at=local_time
                             )
+                            amount = int(request_data.amount) // 100
+                            message = f"₹{amount} has been successfully withdrawn from your wallet!"
+                            notification = await self.notification_update(userId, message, session)
                         else:
                             transaction = Wallet(
                                 user_id=userId,
@@ -407,6 +431,16 @@ class UserService:
                                 create_at=local_time,
                                 update_at=local_time
                             )
+                            amount = int(request_data.amount) // 100,
+                            message = f"₹{amount} has been successfully deducted from your wallet for policy payment. Your policy is now active."
+                            notification = await self.notification_update(userId, message, session)
+                            policy_data = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == policy_id))
+                            policys = policy_data.scalars().first()
+                            
+                            if not policys:
+                                    raise HTTPException(status_code=404, detail="Policy not found")
+                            policys.payment_status = True
+                        
                              
                         
                         session.add(transaction)

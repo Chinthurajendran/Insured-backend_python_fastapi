@@ -23,6 +23,7 @@ from src.user_side.service import UserService
 from typing import List
 from src.utils import generate_passwd_hash
 from src.messages.models import *
+from src.messages.connetct_manager import connection_manager
 
 agent_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
@@ -160,6 +161,7 @@ async def logout_agent(
         raise HTTPException(status_code=404, detail="Agent not found")
 
     agent.agent_login_status = False
+    await connection_manager.disconnect_all(str(agentId))
     await session.commit()
 
     return JSONResponse(status_code=200, content={"message": "Agent logged out successfully."})
@@ -236,16 +238,9 @@ async def ExistingCustomer(agentID: UUID,
                            session: AsyncSession = Depends(get_session),
                            user_details=Depends(access_token_bearer)):
 
-    user_exists_with_email = await user_service.exist_email(email, session)
-
-    if not user_exists_with_email:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail={"message": "User profile is incomplete. Please update the profile before proceeding."})
-
     result = await session.execute(select(usertable).where(usertable.email == email))
     user = result.scalars().first()
-    if not user.profile_status:
+    if not user or not user.profile_status:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail={"message": "User profile is incomplete. Please update the profile before proceeding."})
@@ -257,10 +252,11 @@ async def ExistingCustomer(agentID: UUID,
         nominee_name=nomineeName,
         nominee_relationship=nomineeRelation,
     )
-
     try:
-        update_user = await agent_service.ExistingUserPolicyCreation(agent_data, agentID, id_proof, passbook, income_proof,
-                                                                     photo, pan_card, nominee_address_proof, session)
+        update_user = await agent_service.ExistingUserPolicyCreation(
+            agent_data, agentID, id_proof, passbook, income_proof,
+            photo, pan_card, nominee_address_proof, session)
+        
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -305,14 +301,12 @@ async def new_customer(
     try:
 
         date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date()
-
         user_exists_with_email = await user_service.exist_email(email, session)
         if user_exists_with_email:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail={"message": "Email already used"}
             )
-
         new_user_data = NewUserPolicyRequest(
             username=name,
             email=email,
@@ -327,7 +321,6 @@ async def new_customer(
             nominee_name=nomineeName,
             nominee_relationship=nomineeRelation,
         )
-
         new_user = await agent_service.create_newuser(new_user_data, session)
         if not new_user:
             raise HTTPException(
@@ -342,7 +335,6 @@ async def new_customer(
             nominee_name=nomineeName,
             nominee_relationship=nomineeRelation
         )
-
         update_user = await agent_service.ExistingUserPolicyCreation(
             agent_data, agentID, id_proof, passbook, income_proof, photo, pan_card, nominee_address_proof, session
         )
@@ -653,7 +645,6 @@ async def customerdata(
             }
             for policy in policies
         ]
-        
 
         return JSONResponse(status_code=200, content={"policies": customer_policies})
 
@@ -761,7 +752,7 @@ async def policy_data(session: AsyncSession = Depends(get_session),
         policytable.income_range,
         policytable.policy_id,
     ).where(policytable.delete_status == False))
-    policies = result.mappings().first()
+    policies = result.all()
 
     if not policies:
         return JSONResponse(
@@ -769,16 +760,17 @@ async def policy_data(session: AsyncSession = Depends(get_session),
             content={"message": "Policy not found"},
         )
 
-    policy_dict = {
-        key: str(value) if isinstance(value, UUID) else value
-        for key, value in dict(policies).items()
-    }
+    policy_list = []
+    for row in policies:
+        row_dict = {}
+        for key, value in row._mapping.items():
+            row_dict[key] = str(value) if isinstance(value, UUID) else value
+        policy_list.append(row_dict)
 
     return JSONResponse(
         status_code=200,
-        content={"policy": policy_dict}
+        content={"policy": policy_list}
     )
-
 
 
 @agent_router.get("/customercare/{agentId}", response_model=List[dict])
@@ -787,7 +779,7 @@ async def customercare(
     session: AsyncSession = Depends(get_session),
     policy_details=Depends(access_token_bearer),
 ):
-    
+
     result = await session.execute(
         select(
             Message.uid,
@@ -803,14 +795,15 @@ async def customercare(
             status_code=status.HTTP_404_NOT_FOUND,
             content={"message": "No messages found"},
         )
-    
+
     sender_ids = {row["sender_id"] for row in customerdata}
 
     result = await session.execute(
         select(usertable.user_id, usertable.username)
         .where((usertable.delete_status == False) & (usertable.user_id.in_(sender_ids)))
     )
-    users = {row["user_id"]: row["username"] for row in result.mappings().all()}
+    users = {row["user_id"]: row["username"]
+             for row in result.mappings().all()}
 
     unique_senders = {}
     for row in customerdata:
@@ -830,9 +823,8 @@ async def customercare(
     )
 
 
-
-@agent_router.get("/policiespermonth", response_model=dict)
-async def policygraph(session: AsyncSession = Depends(get_session),
+@agent_router.get("/policiespermonth/{agentId}", response_model=dict)
+async def policygraph(agentId: UUID, session: AsyncSession = Depends(get_session),
                       user_details=Depends(access_token_bearer)):
 
     try:
@@ -840,20 +832,20 @@ async def policygraph(session: AsyncSession = Depends(get_session),
             select(
                 PolicyDetails.policydetails_uid,
                 PolicyDetails.create_at,
-            ).where((PolicyDetails.policy_status == ApprovalStatus.approved) & 
-                    (PolicyDetails.delete_status == False)&(PolicyDetails.agent_id.isnot(None)))
+            ).where((PolicyDetails.policy_status == ApprovalStatus.approved) &
+                    (PolicyDetails.agent_id == agentId) &
+                    (PolicyDetails.delete_status == False))
         )
-        
-        policies = result.all()  
+
+        policies = result.all()
 
         policies_data = [
             {
-                "policydetails_uid": str(policy[0]),  
+                "policydetails_uid": str(policy[0]),
                 "create_at": policy[1].isoformat() if policy[1] else None,
             }
             for policy in policies
         ]
-
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
     except Exception as e:
@@ -862,31 +854,30 @@ async def policygraph(session: AsyncSession = Depends(get_session),
             status_code=500,
             detail=f"An error occurred while fetching policies: {str(e)}"
         )
+
 
 @agent_router.get("/policytakenbyagent", response_model=dict)
 async def policytakenbyagent(session: AsyncSession = Depends(get_session),
-                      user_details=Depends(access_token_bearer)):
+                             user_details=Depends(access_token_bearer)):
 
     try:
         result = await session.execute(
             select(
                 PolicyDetails.policydetails_uid,
                 PolicyDetails.create_at,
-            ).where((PolicyDetails.policy_status == ApprovalStatus.approved) & 
-                    (PolicyDetails.delete_status == False)&(PolicyDetails.agent_id.isnot(None)))
+            ).where((PolicyDetails.policy_status == ApprovalStatus.approved)
+                    (PolicyDetails.delete_status == False) & (PolicyDetails.agent_id.isnot(None)))
         )
-        
-        policies = result.all()  
+
+        policies = result.all()
 
         policies_data = [
             {
-                "policydetails_uid": str(policy[0]),  
+                "policydetails_uid": str(policy[0]),
                 "create_at": policy[1].isoformat() if policy[1] else None,
             }
             for policy in policies
         ]
-
-
 
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
@@ -896,22 +887,22 @@ async def policytakenbyagent(session: AsyncSession = Depends(get_session),
             status_code=500,
             detail=f"An error occurred while fetching policies: {str(e)}"
         )
-    
 
-@agent_router.get("/policypaymentinfo", response_model=dict)
-async def policypaymentinfo(
-    session: AsyncSession = Depends(get_session), 
-    user_details=Depends(access_token_bearer)
-):
+
+@agent_router.get("/policypaymentinfo/{agentId}", response_model=dict)
+async def policypaymentinfo(agentId: UUID,
+                            session: AsyncSession = Depends(get_session),
+                            user_details=Depends(access_token_bearer)
+                            ):
     try:
         result = await session.execute(
             select(
                 PolicyDetails.policydetails_uid,
                 PolicyDetails.policy_status,
                 PolicyDetails.create_at
-            ).where(PolicyDetails.delete_status.is_(False)&(PolicyDetails.agent_id.isnot(None)))
+            ).where(PolicyDetails.delete_status.is_(False) & (PolicyDetails.agent_id == agentId))
         )
-        
+
         policies = result.fetchall()
 
         if not policies:
@@ -919,8 +910,8 @@ async def policypaymentinfo(
 
         policies_data = [
             {
-                "policydetails_uid": str(policy.policydetails_uid), 
-                "policy_status": policy.policy_status,  
+                "policydetails_uid": str(policy.policydetails_uid),
+                "policy_status": policy.policy_status,
                 "create_at": policy.create_at.isoformat() if policy.create_at else None,
             }
             for policy in policies
@@ -929,12 +920,12 @@ async def policypaymentinfo(
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
     except Exception as e:
-        logger.error(f"Error fetching policy data: {e}", exc_info=True)  # Include stack trace
+        # Include stack trace
+        logger.error(f"Error fetching policy data: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="An internal server error occurred while fetching policy information."
         )
-
 
 
 @agent_router.get("/PolicyDetails_list", response_model=dict)
@@ -971,7 +962,6 @@ async def policy_list(session: AsyncSession = Depends(get_session),
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching policies: {str(e)}"
         )
-    
 
 
 @agent_router.post("/RazorpayPaymentCreation")
@@ -989,6 +979,7 @@ async def RazorpayPayment(payment: PaymentRequest, session: AsyncSession = Depen
         return payment
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+
 
 @agent_router.post("/verify-payment/{PolicyId}")
 async def verify_payment(

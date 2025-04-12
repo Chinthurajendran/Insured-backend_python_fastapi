@@ -19,7 +19,7 @@ import asyncio
 from sqlalchemy import update
 import mimetypes
 import pytz
-
+from src.user_side.models import*
 
 load_dotenv()
 
@@ -278,3 +278,22 @@ class AdminService:
         except Exception as e:
             await session.rollback()
             raise Exception(f"Error deleting policy info: {str(e)}")
+
+    async def notification_update(self, user_id, message, session: AsyncSession):
+
+        ist = pytz.timezone("Asia/Kolkata")
+        utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        local_time = utc_time.astimezone(ist)
+        local_time_naive = local_time.replace(tzinfo=None)
+
+        notification = Notification(
+            user_id=user_id,
+            message=message,
+            create_at=local_time_naive
+        )
+
+        session.add(notification)
+        await session.commit()
+        await session.refresh(notification)
+
+        return notification
