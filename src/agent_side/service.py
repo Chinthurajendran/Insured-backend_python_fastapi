@@ -26,9 +26,6 @@ import asyncio
 
 load_dotenv()
 
-logger = logging.getLogger(__name__)
-
-
 BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
@@ -115,8 +112,6 @@ class AgentService:
         session.add(new_agent)
         await session.commit()
         await session.refresh(new_agent)
-
-        logger.info(f"New user created: {new_agent.agent_name}")
 
         return new_agent
 
@@ -340,7 +335,6 @@ class AgentService:
             await fm.send_message(message)
             return new_user
         except Exception as e:
-            print("Error sending email:", e)
             return {"error": "User created, but email failed to send."}
 
 
@@ -350,18 +344,14 @@ class AgentService:
             response = s3_client.list_objects_v2(Bucket=bucket_name, Prefix=folder_name)
 
             if 'Contents' not in response:
-                print(f"No files found in '{folder_name}' in '{bucket_name}'.")
                 return True
 
             file_keys = [{'Key': obj['Key']} for obj in response['Contents']]
 
-
             s3_client.delete_objects(Bucket=bucket_name, Delete={'Objects': file_keys})
 
-            print(f"Deleted {len(file_keys)} files from '{folder_name}' in '{bucket_name}'.")
             return True
         except ClientError as e:
-            print(f"Error deleting folder contents: {e.response['Error']['Message']}")
             return False
 
     async def upload_to_s3_bucket(self,file: UploadFile, folder_name: str) -> str:

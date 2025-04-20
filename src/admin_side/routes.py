@@ -34,7 +34,7 @@ logger = logging.getLogger(__name__)
 admin_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
 admin_service = AdminService()
-REFRESH_TOKEN_EXPIRY = 86400
+REFRESH_TOKEN_EXPIRY = 2
 
 
 @admin_router.post("/admin_login")
@@ -56,7 +56,7 @@ async def admin_login_page(login_data: Admin_login, session: AsyncSession = Depe
                 'admin_role': 'admin'
             },
             refresh=True,
-            expiry=timedelta(seconds=REFRESH_TOKEN_EXPIRY)
+            expiry=timedelta(days=REFRESH_TOKEN_EXPIRY)
         )
 
 
@@ -462,7 +462,6 @@ async def agent_approved_list(session: AsyncSession = Depends(get_session),
         agent_data = []
         for row in agents:
             if len(row) < 12:
-                print(f"Row length is less than expected: {row}")
                 continue
 
             agent_data.append({

@@ -6,7 +6,6 @@ from datetime import datetime
 from src.utils import generate_passwd_hash, UPLOAD_DIR, random_code
 from fastapi import UploadFile, File, HTTPException, status,WebSocket, WebSocketDisconnect
 import logging
-import aiofiles
 from uuid import UUID
 import traceback
 from dotenv import load_dotenv
@@ -17,7 +16,6 @@ import pytz
 import razorpay 
 import hmac
 import hashlib
-from typing import List
 from src.messages.connetct_manager import connection_manager
 from fastapi import Query
 
@@ -25,13 +23,7 @@ load_dotenv()
 
 RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID")
 RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET")
-
 client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
-
-load_dotenv()
-
-logger = logging.getLogger(__name__)
-
 BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')

@@ -23,8 +23,6 @@ from src.user_side.models import*
 
 load_dotenv()
 
-logger = logging.getLogger(__name__)
-
 BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
@@ -97,7 +95,6 @@ class AdminService:
             content_type = content_type or "application/octet-stream" 
 
             def upload():
-                """ Upload file asynchronously using boto3 in a separate thread. """
                 s3_client.put_object(
                     Bucket=BUCKET_NAME,
                     Key=file_path,
@@ -117,10 +114,7 @@ class AdminService:
 
     async def delete_folder_contents(self, bucket_name: str, folder_name: str) -> bool:
         try:
-            print(f"Deleting files from '{folder_name}' in '{bucket_name}'...")
-
             def list_objects():
-                """ List all objects in the given folder (handles pagination). """
                 files = []
                 continuation_token = None
 
@@ -152,16 +146,13 @@ class AdminService:
             files_to_delete = await asyncio.to_thread(list_objects)
 
             if not files_to_delete:
-                print(f"No files found in '{folder_name}' in '{bucket_name}'.")
                 return True
 
             await asyncio.to_thread(delete_files, files_to_delete)
 
-            print(f"Successfully deleted {len(files_to_delete)} files from '{folder_name}'.")
             return True
 
         except ClientError as e:
-            print(f"Error deleting folder contents: {e.response['Error']['Message']}")
             return False
         
 

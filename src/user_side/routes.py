@@ -12,7 +12,6 @@ from .models import *
 from sqlmodel import select
 from uuid import UUID
 from .dependencies import *
-from google.oauth2 import id_token
 from google.auth.transport import requests
 from jose import JWTError
 import requests
@@ -20,7 +19,7 @@ from typing import Optional
 from typing import List
 from src.admin_side.models import policytable
 from math import pow
-from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
+from fastapi_mail import FastMail, MessageSchema
 from src.mail import mail_config
 from src.utils import generate_passwd_hash
 from src.admin_side.models import *
@@ -29,13 +28,13 @@ from sqlalchemy.sql import func
 from sqlalchemy import text
 from src.agent_side.models import *
 from src.messages.connetct_manager import connection_manager
-
+import os
 
 auth_router = APIRouter()
 user_service = UserService()
 access_token_bearer = AccessTokenBearer()
 REFRESH_TOKEN_EXPIRY = 2
-GOOGLE_CLIENT_ID = "270374642053-gvj2j07247e2h96gbd929oh12li1rs2l.apps.googleusercontent.com"
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 
 
 @auth_router.post("/signup", response_model=UserModel, status_code=status.HTTP_201_CREATED)
@@ -206,7 +205,6 @@ def verify_google_token(token: str):
             status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid token")
 
     token_info = response.json()
-    print(token_info['aud'])
 
     if token_info['aud'] != GOOGLE_CLIENT_ID:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST,
@@ -270,7 +268,6 @@ async def google_login(auth_data: GoogleAuthModel, session: AsyncSession = Depen
     except HTTPException as http_exc:
         raise http_exc
     except Exception as e:
-        print('Exception:', e)
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
@@ -438,7 +435,7 @@ async def user_policy_list(userId: UUID, session: AsyncSession = Depends(get_ses
                     "monthly_payment": round(monthly_payment, 2),
                 })
         except ValueError:
-            print(f"Invalid age group format: {policy.age_group}")
+            return JSONResponse(status_code=200, content={"message": f"Invalid age group format: {policy.age_group}"})
 
     if not matching_policies:
         return JSONResponse(status_code=200, content={"message": "No matching policies found"})
@@ -663,7 +660,6 @@ async def notification(userId: UUID, session: AsyncSession = Depends(get_session
         return JSONResponse(status_code=200, content={"message": serialized_messages})
 
     except Exception as e:
-        print(f"Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching notifications: {str(e)}"
@@ -690,7 +686,6 @@ async def clearnotification(userId: UUID, session: AsyncSession = Depends(get_se
         return JSONResponse(status_code=200, content={"message": "Deleted successfully"})
 
     except Exception as e:
-        print(f"Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while deleting notifications: {str(e)}"
@@ -815,7 +810,6 @@ async def walletinfo(userId: UUID, session: AsyncSession = Depends(get_session))
         )
 
     except Exception as e:
-        print(f"Error: {e}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching wallet data: {str(e)}"
@@ -877,7 +871,7 @@ async def wallet_verify_payment_withdraw(
                 content={"error": "Insufficient balance", "balance": balance}
             )
         else:
-            verification = await user_service.wallet_payment_withdraw(userId, request_data, type,session,policy_id)
+            verification = await user_service.wallet_payment_withdraw(userId, request_data, type, session, policy_id)
 
             if verification:
                 return {"status": "success", "message": "Payment verified"}
@@ -902,7 +896,6 @@ async def nearestagent(location: str, session: AsyncSession = Depends(get_sessio
 
         result = await session.execute(
             select(AgentTable.agent_id, AgentTable.latitude, AgentTable.longitude)
-            # Only available agents
             .where((AgentTable.busy_status == False) & (AgentTable.agent_login_status == True))
             .order_by(func.abs(AgentTable.latitude - lat) + func.abs(AgentTable.longitude - lon))
             .limit(1)
@@ -924,7 +917,6 @@ async def nearestagent(location: str, session: AsyncSession = Depends(get_sessio
         return JSONResponse(status_code=200, content={"agents": [{"id": str(agent_id)}]})
 
     except Exception as e:
-        print(f"Error: {e}")
         traceback.print_exc()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

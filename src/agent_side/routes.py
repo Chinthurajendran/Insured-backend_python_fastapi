@@ -29,10 +29,8 @@ agent_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
 agent_service = AgentService()
 user_service = UserService()
-REFRESH_TOKEN_EXPIRY = 86400
 
-logger = logging.getLogger(__name__)
-
+REFRESH_TOKEN_EXPIRY = 2
 
 @agent_router.post("/agent_sign", response_model=AgentCreateResponse, status_code=status.HTTP_201_CREATED)
 async def agent_signup(username: str = Form(...),
@@ -464,7 +462,6 @@ async def agent_policy_list(PolicyId: UUID, session: AsyncSession = Depends(get_
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
     except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching policies: {str(e)}"
@@ -613,7 +610,6 @@ async def customerdata(
     agent_details=Depends(access_token_bearer)
 ):
     email = customer_data.email
-    print("Email received:", email)
 
     try:
         query = (
@@ -649,7 +645,6 @@ async def customerdata(
         return JSONResponse(status_code=200, content={"policies": customer_policies})
 
     except Exception as e:
-        logger.error(f"An error occurred: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An error occurred while fetching policies."
@@ -689,7 +684,6 @@ async def customerinfo(
         policies = result.mappings().first()
 
         if not policies:
-            logger.warning(f"Policy {PolicyId} not found.")
             return JSONResponse(
                 status_code=status.HTTP_404_NOT_FOUND,
                 content={"message": "Policy not found"},
@@ -703,8 +697,6 @@ async def customerinfo(
         return JSONResponse(status_code=200, content={"policies": policy_dict})
 
     except Exception as e:
-        logger.error(
-            f"Error fetching policy {PolicyId}: {str(e)}", exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="An internal server error occurred.",
@@ -849,7 +841,6 @@ async def policygraph(agentId: UUID, session: AsyncSession = Depends(get_session
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
     except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"An error occurred while fetching policies: {str(e)}"
@@ -882,7 +873,6 @@ async def policytakenbyagent(session: AsyncSession = Depends(get_session),
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
     except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail=f"An error occurred while fetching policies: {str(e)}"
@@ -920,8 +910,6 @@ async def policypaymentinfo(agentId: UUID,
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
     except Exception as e:
-        # Include stack trace
-        logger.error(f"Error fetching policy data: {e}", exc_info=True)
         raise HTTPException(
             status_code=500,
             detail="An internal server error occurred while fetching policy information."
@@ -957,7 +945,6 @@ async def policy_list(session: AsyncSession = Depends(get_session),
         return JSONResponse(status_code=200, content={"policies": policies_data})
 
     except Exception as e:
-        logger.error(f"An error occurred: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"An error occurred while fetching policies: {str(e)}"

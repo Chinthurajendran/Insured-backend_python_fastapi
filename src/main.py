@@ -8,7 +8,6 @@ from fastapi.middleware.cors import CORSMiddleware
 from src.messages.connetct_manager import connection_manager
 from sqlalchemy.ext.asyncio import AsyncSession
 from src.db.database import get_session,init_db
-from src.messages.dependencies import AccessTokenBearer
 from fastapi.exceptions import HTTPException
 from src.messages.schemas import*
 from src.messages.service import ChatService
@@ -153,8 +152,6 @@ async def listen_to_notifications(user_id, websocket: WebSocket):
     finally:
         await conn.remove_listener("notification_channel", callback)
         await conn.close()
-        print("Database listener closed")
-
 
 @app.websocket("/ws/notification/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: uuid.UUID):
