@@ -14,6 +14,8 @@ class Settings(BaseSettings):
     MAIL_SSL_TLS: bool = False
     USE_CREDENTIALS: bool = True
     VALIDATE_CERTS: bool = True
+    REDIS_HOST:str = "localhost"
+    REDIS_PORT:int = 6379
 
 
 
@@ -21,5 +23,4 @@ class Settings(BaseSettings):
         env_file= '.env',
         extra= "ignore"
     )
-
 Config = Settings()

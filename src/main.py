@@ -46,6 +46,11 @@ app.include_router(agent_router, prefix="/agent_auth", tags=["Agent Authenticati
 app.include_router(messages_router, prefix="/message_auth", tags=["Message Authentication"])
 
 
+# origins = [
+#     "http://localhost:5173",
+#     "https://www.insuredplus.shop/"
+# ]
+
 origins = [
     "http://localhost:5173"
 ]

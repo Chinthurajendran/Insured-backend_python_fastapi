@@ -1,0 +1,42 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database Service
+  db:
+    image: postgres:13
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=admin
+      - POSTGRES_DB=insured_fastapi
+    ports:
+      - "5435:5432" 
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      
+  # Redis Service
+  redis:
+    image: redis:alpine
+    ports:
+      - "6379:6379"
+
+  # FastAPI Service
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    env_file:
+      - .env  # Ensure env variables are loaded from .env
+    ports:
+      - "8000:8000"
+    depends_on:
+      - db
+      - redis
+    command: ["uvicorn", "src.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    # command: ["gunicorn", "-w", "4", "-k", "uvicorn.workers.UvicornWorker", "src.main:app", "--bind", "0.0.0.0:8000"]
+    # command: ["gunicorn", "-k", "uvicorn.workers.UvicornWorker", "src.main:app", "--bind", "0.0.0.0:8000"]
+    volumes:
+      - ./src:/app/src
+
+volumes:
+  postgres_data:
+    driver: local
