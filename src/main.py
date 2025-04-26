@@ -1,6 +1,5 @@
 from fastapi import FastAPI,WebSocket,Depends,WebSocketDisconnect
 from contextlib import asynccontextmanager
-from src.db.database import init_db
 from src.user_side.routes import auth_router
 from src.admin_side.routes import admin_router
 from src.agent_side.routes import agent_router
@@ -46,14 +45,14 @@ app.include_router(agent_router, prefix="/agent_auth", tags=["Agent Authenticati
 app.include_router(messages_router, prefix="/message_auth", tags=["Message Authentication"])
 
 
-# origins = [
-#     "http://localhost:5173",
-#     "https://www.insuredplus.shop/"
-# ]
-
 origins = [
-    "http://localhost:5173"
+    "http://localhost:5173",
+    "https://www.insuredplus.shop/"
 ]
+
+# origins = [
+#     "http://localhost:5173"
+# ]
 
 app.add_middleware(
     CORSMiddleware,
