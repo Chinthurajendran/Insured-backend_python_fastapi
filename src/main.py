@@ -46,13 +46,8 @@ app.include_router(messages_router, prefix="/message_auth", tags=["Message Authe
 
 
 origins = [
-    "http://localhost:5173",
-    "https://www.insuredplus.shop/"
+    "http://localhost:5173"
 ]
-
-# origins = [
-#     "http://localhost:5173"
-# ]
 
 app.add_middleware(
     CORSMiddleware,
