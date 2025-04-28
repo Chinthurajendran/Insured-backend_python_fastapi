@@ -47,7 +47,7 @@ app.include_router(messages_router, prefix="/message_auth", tags=["Message Authe
 
 origins = [
     "http://localhost:5173",
-    "https://www.insuredplus.shop/"
+    "https://www.insuredplus.shop"
 ]
 
 # origins = [
