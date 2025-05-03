@@ -4,7 +4,7 @@ from sqlmodel.ext.asyncio.session import AsyncSession
 from sqlmodel import select
 from datetime import datetime
 from src.utils import generate_passwd_hash, UPLOAD_DIR, random_code
-from fastapi import UploadFile, File, HTTPException, status,WebSocket, WebSocketDisconnect
+from fastapi import UploadFile, File, HTTPException, status, WebSocket, WebSocketDisconnect
 import logging
 from uuid import UUID
 import traceback
@@ -13,11 +13,12 @@ import os
 import boto3
 from src.admin_side.models import *
 import pytz
-import razorpay 
+import razorpay
 import hmac
 import hashlib
 from src.messages.connetct_manager import connection_manager
 from fastapi import Query
+import re
 
 load_dotenv()
 
@@ -35,6 +36,63 @@ s3_client = boto3.client(
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
     region_name=AWS_REGION
 )
+
+
+class Validation:
+    async def validate_text(self, text: str, session: AsyncSession) -> bool:
+        if not text:
+            return False
+        return bool(re.match(r"^[A-Za-z\s]+$", text))
+    
+    async def validate_city(self, text: str, session: AsyncSession) -> bool:
+        if not text:
+            return False
+        return bool(re.match(r"^[A-Za-z\s]+$", text))
+
+    async def validate_email(self, email: str, session: AsyncSession) -> bool:
+        return bool(re.match(r"^[\w\.-]+@[\w\.-]+\.\w{2,4}$", email))
+
+    async def validate_phone(self, phone: str, session: AsyncSession) -> bool:
+        if not phone:
+            return False
+        return bool(re.match(r"^[6-9]\d{9}$", phone))
+
+    async def validate_file_type(self, image: UploadFile, session: AsyncSession) -> bool:
+        return image.filename.lower().endswith((".jpg", ".jpeg", ".png"))
+
+    async def validate_password(self, password: str, session: AsyncSession) -> bool:
+        return bool(re.match(
+            r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@#$/%^&+=!]).{8,}$",
+            password))
+
+    async def validate_otp(self, otp: str, session: AsyncSession) -> bool:
+        if not otp:
+            return False
+        return bool(re.match(r"^\d{6}$", otp))
+
+    async def validate_marital_status(self, marital_status: str, session: AsyncSession) -> bool:
+        if not marital_status:
+            return False
+        return marital_status in ['Single', 'Married', 'Divorced', 'Widowed']
+
+    async def validate_gender(self, gender: str, session: AsyncSession) -> bool:
+        if not gender:
+            return False
+        return gender in ['Male', 'Female', 'Other']
+
+    async def validate_date_of_birth(self, dob: date, session: AsyncSession) -> bool:
+        if not date:
+            return False
+        today = date.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        return age >= 18
+
+    async def validate_annual_income(self, annual_income: str, session: AsyncSession) -> bool:
+        try:
+            income = float(annual_income)
+            return income > 0
+        except ValueError:
+            return False
 
 
 class UserService:
@@ -77,7 +135,7 @@ class UserService:
         return True if user is not None else False
 
     async def create_user(self, user_details: UserCreate, session: AsyncSession):
-        
+
         user_data_dict = user_details.model_dump()
 
         ist = pytz.timezone("Asia/Kolkata")
@@ -144,8 +202,7 @@ class UserService:
                 detail=f"Failed to update profile: {str(e)}"
             )
 
-
-    async def PolicyCreation(self, 
+    async def PolicyCreation(self,
                              user_data: PolicyRegistration,
                              policyId,
                              userId,
@@ -279,170 +336,172 @@ class UserService:
         return notification
 
     async def payment_creation(self, order_data, session: AsyncSession):
-            try:
-                order = client.order.create(order_data)
-                return {
-                    "order_id": order["id"],
-                    "amount": order["amount"],
-                    "currency": order["currency"]
-                }
+        try:
+            order = client.order.create(order_data)
+            return {
+                "order_id": order["id"],
+                "amount": order["amount"],
+                "currency": order["currency"]
+            }
 
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Payment creation failed: {str(e)}")
-    
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Payment creation failed: {str(e)}")
+
     async def payment_verification(
-            self, 
-            PolicyId: UUID, 
-            request_data: PaymentVerificationRequest, 
-            session: AsyncSession
-        ) -> bool:
-            try:
-                generated_signature = hmac.new(
-                    RAZORPAY_KEY_SECRET.encode(),
-                    f"{request_data.order_id}|{request_data.payment_id}".encode(),
-                    hashlib.sha256
-                ).hexdigest()
+        self,
+        PolicyId: UUID,
+        request_data: PaymentVerificationRequest,
+        session: AsyncSession
+    ) -> bool:
+        try:
+            generated_signature = hmac.new(
+                RAZORPAY_KEY_SECRET.encode(),
+                f"{request_data.order_id}|{request_data.payment_id}".encode(),
+                hashlib.sha256
+            ).hexdigest()
 
-                ist = pytz.timezone("Asia/Kolkata")
-                utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
-                local_time = utc_time.astimezone(ist).replace(tzinfo=None)
+            ist = pytz.timezone("Asia/Kolkata")
+            utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+            local_time = utc_time.astimezone(ist).replace(tzinfo=None)
 
-                if hmac.compare_digest(generated_signature, request_data.signature):
+            if hmac.compare_digest(generated_signature, request_data.signature):
 
-                    transaction = Transaction(
-                        policy_id=PolicyId,
-                        amount = int(request_data.amount) // 100,
-                        description="Paid insurance amount",
+                transaction = Transaction(
+                    policy_id=PolicyId,
+                    amount=int(request_data.amount) // 100,
+                    description="Paid insurance amount",
+                    create_at=local_time,
+                    update_at=local_time
+                )
+
+                policy_data = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == PolicyId))
+                policys = policy_data.scalars().first()
+
+                message = f"₹{int(request_data.amount) // 100} has been successfully paid towards your policy."
+                notification = await self.notification_update(policys.user_id, message, session)
+
+                if not policys:
+                    raise HTTPException(
+                        status_code=404, detail="Policy not found")
+                policys.payment_status = True
+
+                session.add(transaction)
+                await session.commit()
+                await session.refresh(transaction)
+
+                return True
+
+            return False
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Payment verification failed: {str(e)}")
+
+    async def wallet_payment_add(
+        self,
+        userId: UUID,
+        request_data: PaymentVerificationRequest,
+        session: AsyncSession
+    ) -> bool:
+        try:
+            generated_signature = hmac.new(
+                RAZORPAY_KEY_SECRET.encode(),
+                f"{request_data.order_id}|{request_data.payment_id}".encode(),
+                hashlib.sha256
+            ).hexdigest()
+
+            ist = pytz.timezone("Asia/Kolkata")
+            utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+            local_time = utc_time.astimezone(ist).replace(tzinfo=None)
+
+            if hmac.compare_digest(generated_signature, request_data.signature):
+
+                transaction = Wallet(
+                    user_id=userId,
+                    amount=int(request_data.amount) // 100,
+                    description="Amount Add",
+                    transaction_type="debit",
+                    create_at=local_time,
+                    update_at=local_time
+                )
+
+                message = f"You've successfully added ₹{int(request_data.amount) // 100} to your wallet. Happy spending!"
+                notification = await self.notification_update(userId, message, session)
+
+                session.add(transaction)
+                await session.commit()
+                await session.refresh(transaction)
+
+                return True
+
+            return False
+
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Payment verification failed: {str(e)}")
+
+    async def wallet_payment_withdraw(
+        self,
+        userId: UUID,
+        request_data: PaymentVerificationRequest,
+        transaction_type: str,
+        session: AsyncSession,
+        policy_id: Optional[UUID] = Query(None)
+    ) -> bool:
+        try:
+            generated_signature = hmac.new(
+                RAZORPAY_KEY_SECRET.encode(),
+                f"{request_data.order_id}|{request_data.payment_id}".encode(),
+                hashlib.sha256
+            ).hexdigest()
+
+            ist = pytz.timezone("Asia/Kolkata")
+            utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+            local_time = utc_time.astimezone(ist).replace(tzinfo=None)
+
+            if hmac.compare_digest(generated_signature, request_data.signature):
+                if transaction_type == 'withdraw':
+
+                    transaction = Wallet(
+                        user_id=userId,
+                        amount=int(request_data.amount) // 100,
+                        description="Amount withdraw",
+                        transaction_type="credit",
                         create_at=local_time,
                         update_at=local_time
                     )
-
-                    policy_data = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == PolicyId))
+                    amount = int(request_data.amount) // 100
+                    message = f"₹{amount} has been successfully withdrawn from your wallet!"
+                    notification = await self.notification_update(userId, message, session)
+                else:
+                    transaction = Wallet(
+                        user_id=userId,
+                        amount=int(request_data.amount) // 100,
+                        description="Paid insurance amount",
+                        transaction_type="credit",
+                        create_at=local_time,
+                        update_at=local_time
+                    )
+                    amount = int(request_data.amount) // 100,
+                    message = f"₹{amount} has been successfully deducted from your wallet for policy payment. Your policy is now active."
+                    notification = await self.notification_update(userId, message, session)
+                    policy_data = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == policy_id))
                     policys = policy_data.scalars().first()
 
-                    message = f"₹{int(request_data.amount) // 100} has been successfully paid towards your policy."
-                    notification = await self.notification_update(policys.user_id, message, session)
-                    
                     if not policys:
-                            raise HTTPException(status_code=404, detail="Policy not found")
+                        raise HTTPException(
+                            status_code=404, detail="Policy not found")
                     policys.payment_status = True
-                    
-                    session.add(transaction)
-                    await session.commit()
-                    await session.refresh(transaction)
-                    
-                    return True
-                
-                return False
-            
-            except Exception as e:
-                raise HTTPException(status_code=500, detail=f"Payment verification failed: {str(e)}")
-        
-    async def wallet_payment_add(
-                self, 
-                userId: UUID, 
-                request_data: PaymentVerificationRequest, 
-                session: AsyncSession
-            ) -> bool:
-                try:
-                    generated_signature = hmac.new(
-                        RAZORPAY_KEY_SECRET.encode(),
-                        f"{request_data.order_id}|{request_data.payment_id}".encode(),
-                        hashlib.sha256
-                    ).hexdigest()
 
-                    ist = pytz.timezone("Asia/Kolkata")
-                    utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
-                    local_time = utc_time.astimezone(ist).replace(tzinfo=None)
+                session.add(transaction)
+                await session.commit()
+                await session.refresh(transaction)
 
-                    if hmac.compare_digest(generated_signature, request_data.signature):
+                return True
 
-                        transaction = Wallet(
-                            user_id=userId,
-                            amount = int(request_data.amount) // 100,
-                            description="Amount Add",
-                            transaction_type="debit",
-                            create_at=local_time,
-                            update_at=local_time
-                        )
+            return False
 
-                        message = f"You've successfully added ₹{int(request_data.amount) // 100} to your wallet. Happy spending!"
-                        notification = await self.notification_update(userId, message, session)
-
-                        session.add(transaction)
-                        await session.commit()
-                        await session.refresh(transaction)
-                        
-                        return True
-                    
-                    return False
-                
-                except Exception as e:
-                    raise HTTPException(status_code=500, detail=f"Payment verification failed: {str(e)}")
-    
-
-    async def wallet_payment_withdraw(
-                self, 
-                userId: UUID, 
-                request_data: PaymentVerificationRequest,
-                transaction_type:str, 
-                session: AsyncSession,
-                policy_id: Optional[UUID] = Query(None)
-            ) -> bool:
-                try:
-                    generated_signature = hmac.new(
-                        RAZORPAY_KEY_SECRET.encode(),
-                        f"{request_data.order_id}|{request_data.payment_id}".encode(),
-                        hashlib.sha256
-                    ).hexdigest()
-
-                    ist = pytz.timezone("Asia/Kolkata")
-                    utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
-                    local_time = utc_time.astimezone(ist).replace(tzinfo=None)
-
-                    if hmac.compare_digest(generated_signature, request_data.signature):
-                        if transaction_type == 'withdraw':
-
-                            transaction = Wallet(
-                                user_id=userId,
-                                amount = int(request_data.amount) // 100,
-                                description="Amount withdraw",
-                                transaction_type="credit",
-                                create_at=local_time,
-                                update_at=local_time
-                            )
-                            amount = int(request_data.amount) // 100
-                            message = f"₹{amount} has been successfully withdrawn from your wallet!"
-                            notification = await self.notification_update(userId, message, session)
-                        else:
-                            transaction = Wallet(
-                                user_id=userId,
-                                amount = int(request_data.amount) // 100,
-                                description="Paid insurance amount",
-                                transaction_type="credit",
-                                create_at=local_time,
-                                update_at=local_time
-                            )
-                            amount = int(request_data.amount) // 100,
-                            message = f"₹{amount} has been successfully deducted from your wallet for policy payment. Your policy is now active."
-                            notification = await self.notification_update(userId, message, session)
-                            policy_data = await session.execute(select(PolicyDetails).where(PolicyDetails.policydetails_uid == policy_id))
-                            policys = policy_data.scalars().first()
-                            
-                            if not policys:
-                                    raise HTTPException(status_code=404, detail="Policy not found")
-                            policys.payment_status = True
-                        
-                             
-                        
-                        session.add(transaction)
-                        await session.commit()
-                        await session.refresh(transaction)
-                        
-                        return True
-                    
-                    return False 
-                
-                except Exception as e:
-                    raise HTTPException(status_code=500, detail=f"Payment verification failed: {str(e)}")
-
+        except Exception as e:
+            raise HTTPException(
+                status_code=500, detail=f"Payment verification failed: {str(e)}")

@@ -26,12 +26,13 @@ import logging
 from src.agent_side.models import *
 from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from src.mail import mail_config
-from .service import AdminService
+from .service import *
 from sqlalchemy import or_
 
 logger = logging.getLogger(__name__)
 
 admin_router = APIRouter()
+admin_validation = Validation()
 access_token_bearer = AccessTokenBearer()
 admin_service = AdminService()
 REFRESH_TOKEN_EXPIRY = 2
@@ -116,6 +117,7 @@ async def user_list(session: AsyncSession = Depends(get_session),
 async def create_policy(policy_data: PolicyCreateRequest, session: AsyncSession = Depends(get_session)):
 
     try:
+
         policy_exists = await admin_service.exist_policy(policy_data.policy_name, session)
         if policy_exists:
             raise HTTPException(
@@ -705,6 +707,23 @@ async def PolicyInfoCreate(
     user_details=Depends(access_token_bearer)
 ):
     try:
+
+        is_policyinfo_name = await admin_validation.validate_text(policyinfo_name, session)
+        if not is_policyinfo_name:
+            raise HTTPException(status_code=400, detail="Invalid policyinfo_name: only letters and spaces are allowed.")
+        
+        is_titledescription = await admin_validation.validate_text(titledescription, session)
+        if not is_titledescription:
+            raise HTTPException(status_code=400, detail="Invalid titledescription: only letters and spaces are allowed.")
+        
+        is_description = await admin_validation.validate_text(description, session)
+        if not is_description:
+            raise HTTPException(status_code=400, detail="Invalid description: only letters and spaces are allowed.")
+        
+        is_photo = await admin_validation.validate_file_type(photo, session)
+        if not is_photo:
+            raise HTTPException(status_code=400, detail="Invalid photo type: only .jpg, .jpeg, or .png files are allowed.")
+    
         policy_info = {
             "policyinfo_name": policyinfo_name,
             "titledescription": titledescription,
@@ -758,6 +777,22 @@ async def PolicyInfoUpdate(PolicyId: UUID,
     
 
     try:
+        is_policyinfo_name = await admin_validation.validate_text(policyinfo_name, session)
+        if not is_policyinfo_name:
+            raise HTTPException(status_code=400, detail="Invalid policyinfo_name: only letters and spaces are allowed.")
+        
+        is_titledescription = await admin_validation.validate_text(titledescription, session)
+        if not is_titledescription:
+            raise HTTPException(status_code=400, detail="Invalid titledescription: only letters and spaces are allowed.")
+        
+        is_description = await admin_validation.validate_text(description, session)
+        if not is_description:
+            raise HTTPException(status_code=400, detail="Invalid description: only letters and spaces are allowed.")
+        
+        is_photo = await admin_validation.validate_file_type(photo, session)
+        if not is_photo:
+            raise HTTPException(status_code=400, detail="Invalid photo type: only .jpg, .jpeg, or .png files are allowed.")
+    
         policy_info = {
             "policyinfo_name": policyinfo_name,
             "titledescription": titledescription,

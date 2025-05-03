@@ -20,6 +20,7 @@ from sqlalchemy import update
 import mimetypes
 import pytz
 from src.user_side.models import*
+import re
 
 load_dotenv()
 
@@ -34,6 +35,63 @@ s3_client = boto3.client(
     aws_secret_access_key=AWS_SECRET_ACCESS_KEY,
     region_name=AWS_REGION
 )
+
+
+class Validation:
+    async def validate_text(self, text: str, session: AsyncSession) -> bool:
+        if not text:
+            return False
+        return bool(re.match(r"^[A-Za-z\s]+$", text))
+    
+    async def validate_city(self, text: str, session: AsyncSession) -> bool:
+        if not text:
+            return False
+        return bool(re.match(r"^[A-Za-z\s]+$", text))
+
+    async def validate_email(self, email: str, session: AsyncSession) -> bool:
+        return bool(re.match(r"^[\w\.-]+@[\w\.-]+\.\w{2,4}$", email))
+
+    async def validate_phone(self, phone: str, session: AsyncSession) -> bool:
+        if not phone:
+            return False
+        return bool(re.match(r"^[6-9]\d{9}$", phone))
+
+    async def validate_file_type(self, image: UploadFile, session: AsyncSession) -> bool:
+        return image.filename.lower().endswith((".jpg", ".jpeg", ".png"))
+
+    async def validate_password(self, password: str, session: AsyncSession) -> bool:
+        return bool(re.match(
+            r"^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@#$/%^&+=!]).{8,}$",
+            password))
+
+    async def validate_otp(self, otp: str, session: AsyncSession) -> bool:
+        if not otp:
+            return False
+        return bool(re.match(r"^\d{6}$", otp))
+
+    async def validate_marital_status(self, marital_status: str, session: AsyncSession) -> bool:
+        if not marital_status:
+            return False
+        return marital_status in ['Single', 'Married', 'Divorced', 'Widowed']
+
+    async def validate_gender(self, gender: str, session: AsyncSession) -> bool:
+        if not gender:
+            return False
+        return gender in ['Male', 'Female', 'Other']
+
+    async def validate_date_of_birth(self, dob: date, session: AsyncSession) -> bool:
+        if not date:
+            return False
+        today = date.today()
+        age = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day))
+        return age >= 18
+
+    async def validate_annual_income(self, annual_income: str, session: AsyncSession) -> bool:
+        try:
+            income = float(annual_income)
+            return income > 0
+        except ValueError:
+            return False
 
 class AdminService:
 

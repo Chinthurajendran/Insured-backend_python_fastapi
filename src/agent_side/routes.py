@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, status, UploadFile, File, HTTPException,
 from fastapi.responses import JSONResponse
 from sqlmodel.ext.asyncio.session import AsyncSession
 from .schemas import *
-from .service import AgentService
+from .service import *
 from .models import AgentTable, ApprovalStatus
 from src.db.database import get_session
 import logging
@@ -27,10 +27,13 @@ from src.messages.connetct_manager import connection_manager
 
 agent_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
+agent_validation = Validation()
 agent_service = AgentService()
 user_service = UserService()
 
+
 REFRESH_TOKEN_EXPIRY = 2
+
 
 @agent_router.post("/agent_sign", response_model=AgentCreateResponse, status_code=status.HTTP_201_CREATED)
 async def agent_signup(username: str = Form(...),
@@ -45,6 +48,36 @@ async def agent_signup(username: str = Form(...),
                        session: AsyncSession = Depends(get_session)):
     try:
         date_of_birth = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
+
+        is_password = await agent_validation.validate_password(password, session)
+        if not is_password:
+            raise HTTPException(
+                status_code=400, detail="Password must be at least 8 characters, contain 1 uppercase, 1 lowercase, 1 digit, and 1 special character.")
+
+        is_phone = await agent_validation.validate_phone(phone, session)
+        if not is_phone:
+            raise HTTPException(
+                status_code=400, detail="Invalid phone number: must be a 10-digit number starting with 6-9.")
+
+        is_file = await agent_validation.validate_file_type(id_proof, session)
+        if not is_file:
+            raise HTTPException(
+                status_code=400, detail="Invalid file type: only .jpg, .jpeg, or .png files are allowed.")
+
+        is_gender = await agent_validation.validate_gender(gender, session)
+        if not is_gender:
+            raise HTTPException(
+                status_code=400, detail="Invalid gender: must be one of 'Male', 'Female', or 'Other'.")
+
+        is_dob = await agent_validation.validate_date_of_birth(date_of_birth, session)
+        if not is_dob:
+            raise HTTPException(
+                status_code=400, detail="Invalid date of birth: user must be 18 years or older.")
+
+        is_city = await agent_validation.validate_city(city, session)
+        if not is_city:
+            raise HTTPException(
+                status_code=400, detail="Invalid city: only letters and spaces are allowed, and it must be at least 2 characters long.")
 
         agent_data = AgentCreateRequest(username=username, email=email, password=password,
                                         confirm_password=confirm_password, phone=phone, gender=gender,
@@ -78,6 +111,27 @@ async def login_agent(agent_login_data: AgentLoginModel, session: AsyncSession =
     longitude = agent_login_data.longitude
 
     user = await agent_service.get_agent_by_agentid(agentid, session)
+
+    if not agentid or not isinstance(agentid, str) or len(agentid) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid agent ID: must be a non-empty string with at least 3 characters."
+        )
+
+    try:
+        latitude = float(latitude)
+        longitude = float(longitude)
+    except ValueError:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Latitude and longitude must be valid numbers."
+        )
+
+    if user is not None and user.block_status != False:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Agent is Blocked"
+        )
 
     if user is not None and user.approval_status == "approved":
         password_valid = verify_password(password, user.password)
@@ -165,6 +219,23 @@ async def logout_agent(
     return JSONResponse(status_code=200, content={"message": "Agent logged out successfully."})
 
 
+@agent_router.get("/agent_is_blocked/{agent_id}")
+async def is_user_blocked(
+    agent_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user_details=Depends(access_token_bearer),
+):
+    result = await session.execute(
+        select(AgentTable.block_status).where(AgentTable.agent_id == agent_id)
+    )
+    block_status = result.scalar_one_or_none()
+
+    if block_status is None:
+        raise HTTPException(status_code=404, detail="Agent not found")
+
+    return JSONResponse(status_code=200, content={"block_status": block_status})
+
+
 @agent_router.post("/agent_refresh_token")
 async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer())):
     expiry_timestamp = token_details["exp"]
@@ -236,6 +307,49 @@ async def ExistingCustomer(agentID: UUID,
                            session: AsyncSession = Depends(get_session),
                            user_details=Depends(access_token_bearer)):
 
+    if not agentID or not isinstance(agentID, str) or len(agentID) < 3:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid agent ID: must be a non-empty string with at least 3 characters."
+        )
+
+    is_insurancePlan = await agent_validation.validate_text(insurancePlan, session)
+    if not is_insurancePlan:
+        raise HTTPException(
+            status_code=400, detail="Invalid insurancePlan: only letters and spaces are allowed.")
+
+    is_insuranceType = await agent_validation.validate_text(insuranceType, session)
+    if not is_insuranceType:
+        raise HTTPException(
+            status_code=400, detail="Invalid insuranceType: only letters and spaces are allowed.")
+
+    is_nomineeName = await agent_validation.validate_text(nomineeName, session)
+    if not is_nomineeName:
+        raise HTTPException(
+            status_code=400, detail="Invalid nomineeName: only letters and spaces are allowed.")
+
+    is_nomineeRelation = await agent_validation.validate_text(nomineeRelation, session)
+    if not is_nomineeRelation:
+        raise HTTPException(
+            status_code=400, detail="Invalid nomineeRelation: only letters and spaces are allowed.")
+
+    files_to_validate = {
+        "ID Proof": id_proof,
+        "Passbook": passbook,
+        "Income Proof": income_proof,
+        "Photo": photo,
+        "PAN Card": pan_card,
+        "Nominee Address Proof": nominee_address_proof
+    }
+    for label, file in files_to_validate.items():
+        if file is not None:
+            is_valid = await agent_validation.validate_file_type(file, session)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid file type for '{label}': only .jpg, .jpeg, or .png files are allowed."
+                )
+
     result = await session.execute(select(usertable).where(usertable.email == email))
     user = result.scalars().first()
     if not user or not user.profile_status:
@@ -254,7 +368,7 @@ async def ExistingCustomer(agentID: UUID,
         update_user = await agent_service.ExistingUserPolicyCreation(
             agent_data, agentID, id_proof, passbook, income_proof,
             photo, pan_card, nominee_address_proof, session)
-        
+
     except Exception as e:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
@@ -299,6 +413,80 @@ async def new_customer(
     try:
 
         date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date()
+
+        if not agentID or not isinstance(agentID, str) or len(agentID) < 3:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid agent ID: must be a non-empty string with at least 3 characters."
+            )
+        
+        is_name = await agent_validation.validate_text(name, session)
+        if not is_name:
+            raise HTTPException(
+                status_code=400, detail="Invalid name: only letters and spaces are allowed.")
+        
+        is_phone = await agent_validation.validate_phone(phone, session)
+        if not is_phone:
+            raise HTTPException(status_code=400, detail="Invalid phone number: must be a 10-digit number starting with 6-9.")
+
+        is_marital_statu = await agent_validation.validate_marital_status(maritalStatus, session)
+        if not is_marital_statu:
+            raise HTTPException(status_code=400, detail="Invalid marital status: must be one of 'Single', 'Married', 'Divorced', or 'Widowed'.")
+
+        is_gender = await agent_validation.validate_gender(gender, session)
+        if not is_gender:
+            raise HTTPException(status_code=400, detail="Invalid gender: must be one of 'Male', 'Female', or 'Other'.")
+
+        is_dob = await agent_validation.validate_date_of_birth(date_of_birth, session)
+        if not is_dob:
+            raise HTTPException(status_code=400, detail="Invalid date of birth: user must be 18 years or older.")
+
+        is_annual_income = await agent_validation.validate_annual_income(income, session)
+        if not is_annual_income:
+            raise HTTPException(status_code=400, detail="Invalid annual income: must be a positive number.")
+
+        is_city = await agent_validation.validate_city(city, session)
+        if not is_city:
+            raise HTTPException(status_code=400, detail="Invalid city: only letters and spaces are allowed, and it must be at least 2 characters long.")
+
+
+        is_insurancePlan = await agent_validation.validate_text(insurancePlan, session)
+        if not is_insurancePlan:
+            raise HTTPException(
+                status_code=400, detail="Invalid insurancePlan: only letters and spaces are allowed.")
+
+        is_insuranceType = await agent_validation.validate_text(insuranceType, session)
+        if not is_insuranceType:
+            raise HTTPException(
+                status_code=400, detail="Invalid insuranceType: only letters and spaces are allowed.")
+
+        is_nomineeName = await agent_validation.validate_text(nomineeName, session)
+        if not is_nomineeName:
+            raise HTTPException(
+                status_code=400, detail="Invalid nomineeName: only letters and spaces are allowed.")
+
+        is_nomineeRelation = await agent_validation.validate_text(nomineeRelation, session)
+        if not is_nomineeRelation:
+            raise HTTPException(
+                status_code=400, detail="Invalid nomineeRelation: only letters and spaces are allowed.")
+
+        files_to_validate = {
+            "ID Proof": id_proof,
+            "Passbook": passbook,
+            "Income Proof": income_proof,
+            "Photo": photo,
+            "PAN Card": pan_card,
+            "Nominee Address Proof": nominee_address_proof
+        }
+        for label, file in files_to_validate.items():
+            if file is not None:
+                is_valid = await agent_validation.validate_file_type(file, session)
+                if not is_valid:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid file type for '{label}': only .jpg, .jpeg, or .png files are allowed."
+                    )
+
         user_exists_with_email = await user_service.exist_email(email, session)
         if user_exists_with_email:
             raise HTTPException(
@@ -389,6 +577,31 @@ async def Agent_profile_update(agentID: UUID,
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid date format, expected YYYY-MM-DD"
         )
+    
+    is_username = await agent_validation.validate_text(username, session)
+    if not is_username:
+        raise HTTPException(status_code=400, detail="Invalid username: only letters and spaces are allowed.")
+    
+    is_phone = await agent_validation.validate_phone(phone, session)
+    if not is_phone:
+        raise HTTPException(status_code=400, detail="Invalid phone number: must be a 10-digit number starting with 6-9.")
+
+    is_file = await agent_validation.validate_file_type(image, session)
+    if not is_file:
+        raise HTTPException(status_code=400, detail="Invalid file type: only .jpg, .jpeg, or .png files are allowed.")
+
+    is_gender = await agent_validation.validate_gender(gender, session)
+    if not is_gender:
+        raise HTTPException(status_code=400, detail="Invalid gender: must be one of 'Male', 'Female', or 'Other'.")
+
+    is_dob = await agent_validation.validate_date_of_birth(date_of_birth, session)
+    if not is_dob:
+        raise HTTPException(status_code=400, detail="Invalid date of birth: user must be 18 years or older.")
+
+    is_city = await agent_validation.validate_city(city, session)
+    if not is_city:
+        raise HTTPException(status_code=400, detail="Invalid city: only letters and spaces are allowed, and it must be at least 2 characters long.")
+
 
     user_exists = await agent_service.exist_agent_id(agentID, session)
     if not user_exists:
@@ -495,6 +708,80 @@ async def policyupdates(
     try:
         date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date()
 
+
+        if not PolicyId or not isinstance(PolicyId, str) or len(PolicyId) < 3:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Invalid Policy ID: must be a non-empty string with at least 3 characters."
+            )
+        
+        is_name = await agent_validation.validate_text(name, session)
+        if not is_name:
+            raise HTTPException(
+                status_code=400, detail="Invalid name: only letters and spaces are allowed.")
+        
+        is_phone = await agent_validation.validate_phone(phone, session)
+        if not is_phone:
+            raise HTTPException(status_code=400, detail="Invalid phone number: must be a 10-digit number starting with 6-9.")
+
+        is_marital_statu = await agent_validation.validate_marital_status(maritalStatus, session)
+        if not is_marital_statu:
+            raise HTTPException(status_code=400, detail="Invalid marital status: must be one of 'Single', 'Married', 'Divorced', or 'Widowed'.")
+
+        is_gender = await agent_validation.validate_gender(gender, session)
+        if not is_gender:
+            raise HTTPException(status_code=400, detail="Invalid gender: must be one of 'Male', 'Female', or 'Other'.")
+
+        is_dob = await agent_validation.validate_date_of_birth(date_of_birth, session)
+        if not is_dob:
+            raise HTTPException(status_code=400, detail="Invalid date of birth: user must be 18 years or older.")
+
+        is_annual_income = await agent_validation.validate_annual_income(income, session)
+        if not is_annual_income:
+            raise HTTPException(status_code=400, detail="Invalid annual income: must be a positive number.")
+
+        is_city = await agent_validation.validate_city(city, session)
+        if not is_city:
+            raise HTTPException(status_code=400, detail="Invalid city: only letters and spaces are allowed, and it must be at least 2 characters long.")
+
+
+        is_insurancePlan = await agent_validation.validate_text(insurancePlan, session)
+        if not is_insurancePlan:
+            raise HTTPException(
+                status_code=400, detail="Invalid insurancePlan: only letters and spaces are allowed.")
+
+        is_insuranceType = await agent_validation.validate_text(insuranceType, session)
+        if not is_insuranceType:
+            raise HTTPException(
+                status_code=400, detail="Invalid insuranceType: only letters and spaces are allowed.")
+
+        is_nomineeName = await agent_validation.validate_text(nomineeName, session)
+        if not is_nomineeName:
+            raise HTTPException(
+                status_code=400, detail="Invalid nomineeName: only letters and spaces are allowed.")
+
+        is_nomineeRelation = await agent_validation.validate_text(nomineeRelation, session)
+        if not is_nomineeRelation:
+            raise HTTPException(
+                status_code=400, detail="Invalid nomineeRelation: only letters and spaces are allowed.")
+
+        files_to_validate = {
+            "ID Proof": id_proof,
+            "Passbook": passbook,
+            "Income Proof": income_proof,
+            "Photo": photo,
+            "PAN Card": pan_card,
+            "Nominee Address Proof": nominee_address_proof
+        }
+        for label, file in files_to_validate.items():
+            if file is not None:
+                is_valid = await agent_validation.validate_file_type(file, session)
+                if not is_valid:
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Invalid file type for '{label}': only .jpg, .jpeg, or .png files are allowed."
+                    )
+
         user_exists_with_email = await user_service.exist_email(email, session)
         if not user_exists_with_email:
             raise HTTPException(
@@ -578,6 +865,10 @@ async def password_recovery(agent_id: AgentPasswordrecovery,
 async def password_reset(agent_data: RestpasswordModel, session: AsyncSession = Depends(get_session)):
     agent_id = agent_data.agentid
     password = agent_data.password
+
+    is_password = await agent_validation.validate_password(password, session)
+    if not is_password:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters, contain 1 uppercase, 1 lowercase, 1 digit, and 1 special character.")
 
     result = await session.execute(select(AgentTable).where(AgentTable.agent_userid == agent_id))
     agent = result.scalars().first()
@@ -955,6 +1246,15 @@ async def policy_list(session: AsyncSession = Depends(get_session),
 async def RazorpayPayment(payment: PaymentRequest, session: AsyncSession = Depends(get_session)):
     """Creates an order in Razorpay."""
     try:
+        if payment.amount <= 0:
+            raise HTTPException(status_code=400, detail="Amount must be greater than 0")
+
+        if not payment.currency.isalpha() or len(payment.currency) != 3:
+            raise HTTPException(status_code=400, detail="Currency must be a 3-letter alphabetic code")
+
+        if not payment.receipt.strip():
+            raise HTTPException(status_code=400, detail="Receipt must not be empty")
+        
         order_data = {
             "amount": payment.amount * 100,
             "currency": payment.currency,

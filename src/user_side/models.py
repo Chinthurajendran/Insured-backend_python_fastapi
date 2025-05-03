@@ -42,6 +42,24 @@ class usertable(SQLModel, table=True):
     def __repr__(self):
         return f"<UserTable {self.username}>"
 
+class OTPVerification(SQLModel, table=True):
+    __tablename__ = "otp_verification"
+    
+    otp_verification_uid: uuid.UUID = Field(
+        sa_column=Column(pg.UUID, primary_key=True, nullable=False, default=uuid.uuid4)
+    )
+    email: str = Field(index=True)
+    otp: str = Field(nullable=True)
+    created_at: datetime = Field(
+        sa_column=Column(pg.TIMESTAMP, nullable=False, default=datetime.utcnow)
+    )
+    updated_at: datetime = Field(
+        sa_column=Column(pg.TIMESTAMP, nullable=False, default=datetime.utcnow)
+    )
+
+    def __repr__(self):
+        return f"<OTPVerification {self.message}>"
+
 
 class Notification(SQLModel, table=True):
     __tablename__ = "notification"

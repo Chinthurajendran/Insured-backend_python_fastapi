@@ -119,21 +119,52 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
     except Exception as e:
         connection_manager.disconnect(user_id, websocket)
 
+# @app.websocket("/ws/webrtcvedio/{user_id}")
+# async def websocket_endpoint(websocket: WebSocket, user_id: str):
+#     await connection_manager.connect(user_id, websocket)
+
+#     try:
+#         while True:
+#             data = await websocket.receive_json()
+#             target_id = data.get("target_id")
+#             if target_id:
+#                 await connection_manager.send_personal_message(target_id, data)
+            
+#     except WebSocketDisconnect:
+#         connection_manager.disconnect(user_id, websocket)
+#     except Exception as e:
+#         connection_manager.disconnect(user_id, websocket)
+
 @app.websocket("/ws/webrtcvedio/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
-    await connection_manager.connect(user_id, websocket)
-
     try:
+        # Add user connection to the manager
+        await connection_manager.connect(user_id, websocket)
+        print(f"✅ User {user_id} connected")
+
+        # Listen for messages
         while True:
-            data = await websocket.receive_json()
-            target_id = data.get("target_id")
-            if target_id:
-                await connection_manager.send_personal_message(target_id, data)
-            
+            try:
+                # Safely receive data
+                data = await websocket.receive_json()
+                target_id = data.get("target_id")
+                if target_id:
+                    # Forward message to the target user
+                    await connection_manager.send_personal_message(target_id, data)
+                    print(f"📡 Message from {user_id} to {target_id}: {data}")
+            except WebSocketDisconnect:
+                print(f"🔌 User {user_id} disconnected during message handling")
+                break
+            except Exception as e:
+                print(f"❌ Error while handling message for user {user_id}: {e}")
     except WebSocketDisconnect:
-        connection_manager.disconnect(user_id, websocket)
+        print(f"🔌 User {user_id} disconnected")
     except Exception as e:
+        print(f"❌ Unexpected error for user {user_id}: {e}")
+    finally:
+        # Ensure proper cleanup of the user's connection
         connection_manager.disconnect(user_id, websocket)
+
 
 
 

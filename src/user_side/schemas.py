@@ -1,15 +1,22 @@
-from pydantic import BaseModel,EmailStr,Field
+from pydantic import BaseModel,EmailStr,Field,validator
 import uuid
 from datetime import datetime,date
 from typing import Optional
+import re
 
+class Emailvalidation(BaseModel):
+    email: EmailStr
+    
+
+class OTPverification(BaseModel):
+    email: EmailStr
+    OTP: str
 
 class UserCreate(BaseModel):
-    username:str
+    username: str
     email: EmailStr
-    password :  str
-    confirm_password : str
-
+    password: str
+    confirm_password: str
 
 class UserModel(BaseModel):
     user_id : uuid.UUID

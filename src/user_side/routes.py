@@ -6,7 +6,7 @@ from .service import *
 from fastapi.exceptions import HTTPException
 from fastapi.responses import JSONResponse
 from src.utils import create_access_token, decode_token, verify_password
-from datetime import timedelta
+from datetime import timedelta,datetime
 from .dependencies import *
 from .models import *
 from sqlmodel import select
@@ -28,13 +28,171 @@ from sqlalchemy.sql import func
 from sqlalchemy import text
 from src.agent_side.models import *
 from src.messages.connetct_manager import connection_manager
+from src.utils import random_code
 import os
+from sqlalchemy import and_
 
 auth_router = APIRouter()
 user_service = UserService()
+user_validation = Validation()
 access_token_bearer = AccessTokenBearer()
 REFRESH_TOKEN_EXPIRY = 2
 GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
+
+
+@auth_router.post("/emailvarfication", response_model=UserModel, status_code=status.HTTP_201_CREATED)
+async def Emailvarfication(user_data: Emailvalidation, session: AsyncSession = Depends(get_session)):
+
+    email = user_data.email.lower()
+    isEmail = await user_validation.validate_email(email, session)
+    user_exists_with_email = await user_service.exist_email(email, session)
+
+    if isEmail:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid email format.")
+
+    if user_exists_with_email:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Email already exists")
+    
+    code = random_code()
+
+    message = MessageSchema(
+        subject="Email Verification Code",
+        recipients=[email],
+        body=(
+            f"Hello,\n\n"
+            f"Thank you for registering with us!\n\n"
+            f"To verify your email address, please use the following One-Time Password (OTP):\n\n"
+            f"OTP: {code}\n\n"
+            f"This code is valid for the next 2 minutes.\n\n"
+            f"If you did not request this, please ignore this email.\n\n"
+            f"Best regards,\n"
+            f"Your Team"
+        ),
+        subtype="plain"
+    )
+
+    fm = FastMail(mail_config)
+    try:
+        await fm.send_message(message)
+        ist = pytz.timezone("Asia/Kolkata")
+        utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        local_time = utc_time.astimezone(ist)
+        local_time_naive = local_time.replace(tzinfo=None)
+
+        OTP = OTPVerification(
+            email = email,
+            otp=str(code),
+            created_at=local_time_naive,
+            updated_at=local_time_naive
+        )
+
+        session.add(OTP)
+        await session.commit()
+        await session.refresh(OTP)
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content={
+                "message": "OTP has been successfully sent to your registered email address.",
+            })
+    
+    except Exception as e:
+        import logging
+        logging.error(f"Error sending email or saving OTP: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send email")
+
+@auth_router.post("/ResendOTP", status_code=status.HTTP_201_CREATED)
+async def Resendotp(user_data: Emailvalidation, session: AsyncSession = Depends(get_session)):
+    email = user_data.email.lower()
+    
+    result = await session.execute(select(OTPVerification).where(OTPVerification.email == email))
+    existing_otp = result.scalars().first()
+
+    if existing_otp is None:
+        raise HTTPException(status_code=404, detail="Email not registered for verification.")
+
+    code = random_code()
+
+    message = MessageSchema(
+        subject="Email Verification Code",
+        recipients=[email],
+        body=(
+            f"Hello,\n\n"
+            f"Thank you for registering with us!\n\n"
+            f"To verify your email address, please use the following One-Time Password (OTP):\n\n"
+            f"OTP: {code}\n\n"
+            f"This code is valid for the next 2 minutes.\n\n"
+            f"If you did not request this, please ignore this email.\n\n"
+            f"Best regards,\n"
+            f"Your Team"
+        ),
+        subtype="plain"
+    )
+
+    try:
+        fm = FastMail(mail_config)
+        await fm.send_message(message)
+
+        ist = pytz.timezone("Asia/Kolkata")
+        utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+        local_time = utc_time.astimezone(ist).replace(tzinfo=None)
+
+        existing_otp.otp = str(code)
+        existing_otp.created_at = local_time
+        existing_otp.updated_at = local_time
+
+        await session.commit()
+
+        return JSONResponse(
+            status_code=status.HTTP_201_CREATED,
+            content={"message": "OTP has been successfully resent to your registered email address.",
+                     "email": email}
+        )
+
+    except Exception as e:
+        import logging
+        logging.error(f"Error sending email or saving OTP: {e}")
+        raise HTTPException(status_code=500, detail="Failed to send email")
+
+
+@auth_router.post("/OTPverification", status_code=status.HTTP_201_CREATED)
+async def OTPverifications(user_data: OTPverification, session: AsyncSession = Depends(get_session)):
+    email = user_data.email.lower()
+    OTP = user_data.OTP
+
+    is_OTP = await user_validation.validate_otp(OTP, session)
+    if not is_OTP:
+        raise HTTPException(status_code=400, detail="Invalid OTP: must be a 6-digit number.")
+
+    result = await session.execute(
+        select(OTPVerification).where(
+            and_(
+                OTPVerification.email == email,
+                OTPVerification.otp == OTP
+            )
+        )
+    )
+
+    existing_otp = result.scalars().first()
+
+    if existing_otp is None:
+        raise HTTPException(status_code=404, detail="Invalid email or OTP.")
+
+    ist = pytz.timezone("Asia/Kolkata")
+    utc_time = datetime.utcnow().replace(tzinfo=pytz.utc)
+    now_ist = utc_time.astimezone(ist).replace(tzinfo=None)
+    
+    if now_ist - existing_otp.created_at > timedelta(minutes=1):
+        raise HTTPException(status_code=400, detail="OTP has expired. Please request a new one.")
+    
+    return JSONResponse(
+            status_code=status.HTTP_200_OK,
+            content={
+                "message": "OTP has been successfully verified.",
+                "email": email
+            }
+        )
 
 
 @auth_router.post("/signup", response_model=UserModel, status_code=status.HTTP_201_CREATED)
@@ -42,6 +200,15 @@ async def create_user_account(user_data: UserCreate, session: AsyncSession = Dep
 
     email = user_data.email.lower()
     username = user_data.username.lower()
+
+    is_username = await user_validation.validate_text(username, session)
+    if not is_username:
+        raise HTTPException(status_code=400, detail="Invalid username: only letters and spaces are allowed.")
+    
+    is_password = await user_validation.validate_password(user_data.password, session)
+    if not is_password:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters, contain 1 uppercase, 1 lowercase, 1 digit, and 1 special character.")
+
     user_exists_with_email = await user_service.exist_email(email, session)
     user_exists_with_username = await user_service.exist_username(username, session)
 
@@ -160,6 +327,11 @@ async def password_recovery(user_email: Passwordrecovery,
 async def password_reset(user_data: UserLoginModel, session: AsyncSession = Depends(get_session)):
     email = user_data.email
     password = user_data.password
+
+    is_password = await user_validation.validate_password(user_data.password, session)
+    if not is_password:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters, contain 1 uppercase, " \
+        "1 lowercase, 1 digit, and 1 special character.")
 
     result = await session.execute(select(usertable).where(usertable.email == email))
     user = result.scalars().first()
@@ -287,6 +459,23 @@ async def get_new_access_token(token_details: dict = Depends(RefreshTokenBearer(
                         detail="Invalid or expired token")
 
 
+@auth_router.get("/user_is_blocked/{user_id}")
+async def is_user_blocked(
+    user_id: UUID,
+    session: AsyncSession = Depends(get_session),
+    user_details=Depends(access_token_bearer),
+):
+    result = await session.execute(
+        select(usertable.block_status).where(usertable.user_id == user_id)
+    )
+    block_status = result.scalar_one_or_none()
+    
+    if block_status is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    
+    return JSONResponse(status_code=200, content={"block_status": block_status})
+
+
 @auth_router.put("/user_logout/{user_id}")
 async def logout_agent(
     user_id: UUID,
@@ -346,6 +535,43 @@ async def update_profile(userId: UUID,
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Invalid date format, expected YYYY-MM-DD"
         )
+    
+    is_username = await user_validation.validate_text(username, session)
+    if not is_username:
+        raise HTTPException(status_code=400, detail="Invalid username: only letters and spaces are allowed.")
+    
+    is_city = await user_validation.validate_city(city, session)
+    if not is_city:
+        raise HTTPException(status_code=400, detail="Invalid city: only letters and spaces are allowed, and it must be at least 2 characters long.")
+
+    is_email = await user_validation.validate_email(email, session)
+    if not is_email:
+        raise HTTPException(status_code=400, detail="Invalid email format.")
+    
+    is_phone = await user_validation.validate_phone(phone, session)
+    if not is_phone:
+        raise HTTPException(status_code=400, detail="Invalid phone number: must be a 10-digit number starting with 6-9.")
+
+    is_file = await user_validation.validate_file_type(image, session)
+    if not is_file:
+        raise HTTPException(status_code=400, detail="Invalid file type: only .jpg, .jpeg, or .png files are allowed.")
+
+    is_marital_statu = await user_validation.validate_marital_status(marital_status, session)
+    if not is_marital_statu:
+        raise HTTPException(status_code=400, detail="Invalid marital status: must be one of 'Single', 'Married', 'Divorced', or 'Widowed'.")
+
+    is_gender = await user_validation.validate_gender(gender, session)
+    if not is_gender:
+        raise HTTPException(status_code=400, detail="Invalid gender: must be one of 'Male', 'Female', or 'Other'.")
+
+    is_dob = await user_validation.validate_date_of_birth(date_of_birth, session)
+    if not is_dob:
+        raise HTTPException(status_code=400, detail="Invalid date of birth: user must be 18 years or older.")
+
+    is_annual_income = await user_validation.validate_annual_income(annual_income, session)
+    if not is_annual_income:
+        raise HTTPException(status_code=400, detail="Invalid annual income: must be a positive number.")
+
 
     user_exists = await user_service.exist_user_id(userId, session)
     if not user_exists:
@@ -496,6 +722,30 @@ async def policy_registration(
     session: AsyncSession = Depends(get_session),
     user_details=Depends(access_token_bearer),
 ):
+    is_nomineeName = await user_validation.validate_text(nomineeName, session)
+    if not is_nomineeName:
+        raise HTTPException(status_code=400, detail="Invalid nomineeName: only letters and spaces are allowed.")
+    
+    is_nomineeRelation = await user_validation.validate_text(nomineeRelation, session)
+    if not is_nomineeRelation:
+        raise HTTPException(status_code=400, detail="Invalid nomineeRelation: only letters and spaces are allowed.")
+    
+    files_to_validate = {
+        "ID Proof": id_proof,
+        "Passbook": passbook,
+        "Income Proof": income_proof,
+        "Photo": photo,
+        "PAN Card": pan_card,
+        "Nominee Address Proof": nominee_address_proof
+    }
+    for label, file in files_to_validate.items():
+        if file is not None:
+            is_valid = await user_validation.validate_file_type(file, session)
+            if not is_valid:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid file type for '{label}': only .jpg, .jpeg, or .png files are allowed."
+                )
 
     policy_register = PolicyRegistration(
         nominee_name=nomineeName,
@@ -694,8 +944,17 @@ async def clearnotification(userId: UUID, session: AsyncSession = Depends(get_se
 
 @auth_router.post("/RazorpayPaymentCreation")
 async def RazorpayPayment(payment: PaymentRequest, session: AsyncSession = Depends(get_session)):
-    """Creates an order in Razorpay."""
     try:
+
+        if payment.amount <= 0:
+            raise HTTPException(status_code=400, detail="Amount must be greater than 0")
+
+        if not payment.currency.isalpha() or len(payment.currency) != 3:
+            raise HTTPException(status_code=400, detail="Currency must be a 3-letter alphabetic code")
+
+        if not payment.receipt.strip():
+            raise HTTPException(status_code=400, detail="Receipt must not be empty")
+        
         order_data = {
             "amount": payment.amount * 100,
             "currency": payment.currency,
@@ -863,6 +1122,7 @@ async def wallet_verify_payment_withdraw(
         amount = int(request_data.amount) // 100
 
         balance = total_debit - total_credit-amount
+        
         if balance <= 0:
             message = f"Transaction failed due to insufficient balance. You attempted to withdraw ₹{amount}, but your available balance is ₹{balance}."
             notification = await user_service.notification_update(userId, message, session)
