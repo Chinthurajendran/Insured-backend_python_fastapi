@@ -46,15 +46,10 @@ app.include_router(messages_router, prefix="/message_auth", tags=["Message Authe
 
 
 origins = [
-    "http://localhost:5173",          # for local development
-    "https://www.insuredplus.shop",   # your frontend domain
-    "https://api.insuredplus.shop"    # your backend domain (optional, sometimes needed)
+    "http://localhost:5173",        
+    "https://www.insuredplus.shop", 
+    "https://api.insuredplus.shop"  
 ]
-
-
-# origins = [
-#     "http://localhost:5173"
-# ]
 
 app.add_middleware(
     CORSMiddleware,
@@ -93,11 +88,20 @@ async def chat_websocket_endpoint(
     try:
         while True:
             data = await websocket.receive_json()
+
+            receiver_id = data.get("receiver_id")
+
+            if not receiver_id:
+                continue  # or return error to client
+
             message_data = MessageCreate(**data)
             saved_message = await chat_service.create_message(message_data,user_id,session)
             serialized_message = serialize_message(saved_message.dict())
 
-            await connection_manager.broadcast(serialized_message)
+            # await connection_manager.broadcast(serialized_message)
+
+            await connection_manager.send_personal_message(receiver_id, serialized_message)
+            await connection_manager.send_personal_message(user_id, serialized_message)
 
     except WebSocketDisconnect:
         connection_manager.disconnect(user_id,websocket)

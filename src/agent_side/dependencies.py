@@ -4,6 +4,7 @@ from fastapi.security.http import HTTPAuthorizationCredentials
 from src.utils import decode_token
 from fastapi.exceptions import HTTPException
 from typing import Optional
+from src.db.redis import *
 
 
 class TokenBearer(HTTPBearer):
@@ -21,6 +22,11 @@ class TokenBearer(HTTPBearer):
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or  expired token"
             )
+        if await token_in_blocklist(token_data['jti']):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Agent Token is blacklisted. Please log in again"
+            ) 
 
         self.verify_token_data(token_data)
         self.check_agent_role(token_data)

@@ -5,6 +5,7 @@ from src.utils import decode_token
 from fastapi.exceptions import HTTPException
 from typing import Optional
 import jwt
+from src.db.redis import *
 
 
 class TokenBearer(HTTPBearer):
@@ -22,6 +23,12 @@ class TokenBearer(HTTPBearer):
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Invalid or  expired token"
+            ) 
+        
+        if await token_in_blocklist(token_data['jti']):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="User Token is blacklisted. Please log in again"
             ) 
 
         self.verify_token_data(token_data)

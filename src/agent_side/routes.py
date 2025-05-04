@@ -24,6 +24,7 @@ from typing import List
 from src.utils import generate_passwd_hash
 from src.messages.models import *
 from src.messages.connetct_manager import connection_manager
+from src.db.redis import *
 
 agent_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
@@ -206,6 +207,9 @@ async def logout_agent(
     session: AsyncSession = Depends(get_session),
     user_details=Depends(access_token_bearer),
 ):
+    jti = user_details['jti']
+    await add_jti_to_blocklist(jti)
+
     result = await session.execute(select(AgentTable).where(AgentTable.agent_id == agentId))
     agent = result.scalars().first()
 
@@ -307,11 +311,6 @@ async def ExistingCustomer(agentID: UUID,
                            session: AsyncSession = Depends(get_session),
                            user_details=Depends(access_token_bearer)):
 
-    if not agentID or not isinstance(agentID, str) or len(agentID) < 3:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid agent ID: must be a non-empty string with at least 3 characters."
-        )
 
     is_insurancePlan = await agent_validation.validate_text(insurancePlan, session)
     if not is_insurancePlan:
@@ -570,6 +569,10 @@ async def Agent_profile_update(agentID: UUID,
                                image_url: Optional[str] = Form(None),
                                image: Optional[UploadFile] = File(None),
                                session: AsyncSession = Depends(get_session)):
+    
+    print("Received form data:")
+    print(f"username={username}, email={email}, phone={phone}, gender={gender}, dob={date_of_birth}")
+    print(f"city={city}, image={image.filename if image else 'None'}")
     try:
         date_of_birth = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
     except ValueError:

@@ -31,6 +31,7 @@ from src.messages.connetct_manager import connection_manager
 from src.utils import random_code
 import os
 from sqlalchemy import and_
+from src.db.redis import*
 
 auth_router = APIRouter()
 user_service = UserService()
@@ -44,12 +45,7 @@ GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID")
 async def Emailvarfication(user_data: Emailvalidation, session: AsyncSession = Depends(get_session)):
 
     email = user_data.email.lower()
-    isEmail = await user_validation.validate_email(email, session)
     user_exists_with_email = await user_service.exist_email(email, session)
-
-    if isEmail:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, detail="Invalid email format.")
 
     if user_exists_with_email:
         raise HTTPException(
@@ -480,8 +476,11 @@ async def is_user_blocked(
 async def logout_agent(
     user_id: UUID,
     session: AsyncSession = Depends(get_session),
-    user_details=Depends(access_token_bearer),
+    user_details : dict=Depends(access_token_bearer),
 ):
+    jti = user_details['jti']
+    await add_jti_to_blocklist(jti)
+
     result = await session.execute(select(usertable).where(usertable.user_id == user_id))
     user = result.scalars().first()
     if not user:
@@ -528,6 +527,11 @@ async def update_profile(userId: UUID,
                          image_url: Optional[str] = Form(None),
                          image: Optional[UploadFile] = File(None),
                          session: AsyncSession = Depends(get_session)):
+    
+    print("Received form data:")
+    print(f"username={username}, email={email}, phone={phone}, gender={gender}, dob={date_of_birth}")
+    print(f"city={city}, marital_status={marital_status}, income={annual_income}, image={image.filename if image else 'None'}")
+
     try:
         date_of_birth = datetime.strptime(date_of_birth, '%Y-%m-%d').date()
     except ValueError:

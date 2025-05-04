@@ -60,6 +60,8 @@ class Validation:
         return bool(re.match(r"^[6-9]\d{9}$", phone))
 
     async def validate_file_type(self, image: UploadFile, session: AsyncSession) -> bool:
+        if image is None:
+            return True
         return image.filename.lower().endswith((".jpg", ".jpeg", ".png"))
 
     async def validate_password(self, password: str, session: AsyncSession) -> bool:
@@ -90,11 +92,14 @@ class Validation:
         return age >= 18
 
     async def validate_annual_income(self, annual_income: str, session: AsyncSession) -> bool:
-        try:
-            income = float(annual_income)
-            return income > 0
-        except ValueError:
-            return False
+        valid_ranges = [
+            "0 - 2,50,000",
+            "2,50,001 - 5,00,000",
+            "5,00,001 - 7,50,000",
+            "7,50,001 - 10,00,000",
+            "10,00,001 and above"
+        ]
+        return annual_income in valid_ranges
 
 class AgentService:
 

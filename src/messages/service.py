@@ -19,7 +19,6 @@ class ChatService:
             content=message.content,
             created_at=local_time
         )
-
         session.add(message_instance)
         await session.commit()
         await session.refresh(message_instance)
