@@ -46,7 +46,7 @@ class Validation:
     async def titledescription(self, text: str, session: AsyncSession) -> bool:
         if not text:
             return False
-        if not re.match(r"^[A-Za-z\s.,'-]+$", text):
+        if not re.match(r"^[A-Za-z0-9\s.,'’\-]+$", text):
             return False
         if len(text.strip().split()) < 20:
             return False
@@ -55,7 +55,7 @@ class Validation:
     async def description(self, text: str, session: AsyncSession) -> bool:
         if not text:
             return False
-        if not re.match(r"^[A-Za-z\s.,'-]+$", text):
+        if not re.match(r"^[A-Za-z0-9\s.,'’\-]+$", text):
             return False
         if len(text.strip().split()) < 50:
             return False
