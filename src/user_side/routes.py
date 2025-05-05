@@ -31,7 +31,7 @@ from src.messages.connetct_manager import connection_manager
 from src.utils import random_code
 import os
 from sqlalchemy import and_
-from src.db.redis import*
+# from src.db.redis import*
 
 auth_router = APIRouter()
 user_service = UserService()
@@ -478,8 +478,8 @@ async def logout_agent(
     session: AsyncSession = Depends(get_session),
     user_details : dict=Depends(access_token_bearer),
 ):
-    jti = user_details['jti']
-    await add_jti_to_blocklist(jti)
+    # jti = user_details['jti']
+    # await add_jti_to_blocklist(jti)
 
     result = await session.execute(select(usertable).where(usertable.user_id == user_id))
     user = result.scalars().first()

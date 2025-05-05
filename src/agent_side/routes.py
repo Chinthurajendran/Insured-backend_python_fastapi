@@ -24,7 +24,7 @@ from typing import List
 from src.utils import generate_passwd_hash
 from src.messages.models import *
 from src.messages.connetct_manager import connection_manager
-from src.db.redis import *
+# from src.db.redis import *
 
 agent_router = APIRouter()
 access_token_bearer = AccessTokenBearer()
@@ -207,8 +207,8 @@ async def logout_agent(
     session: AsyncSession = Depends(get_session),
     user_details=Depends(access_token_bearer),
 ):
-    jti = user_details['jti']
-    await add_jti_to_blocklist(jti)
+    # jti = user_details['jti']
+    # await add_jti_to_blocklist(jti)
 
     result = await session.execute(select(AgentTable).where(AgentTable.agent_id == agentId))
     agent = result.scalars().first()

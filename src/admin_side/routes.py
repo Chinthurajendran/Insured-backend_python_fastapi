@@ -28,7 +28,7 @@ from fastapi_mail import FastMail, MessageSchema, ConnectionConfig
 from src.mail import mail_config
 from .service import *
 from sqlalchemy import or_
-from src.db.redis import *
+# from src.db.redis import *
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +88,8 @@ async def logout_agent(
     session: AsyncSession = Depends(get_session),
     user_details : dict=Depends(access_token_bearer),
 ):
-    jti = user_details['jti']
-    await add_jti_to_blocklist(jti)
+    # jti = user_details['jti']
+    # await add_jti_to_blocklist(jti)
 
     return JSONResponse(status_code=200, content={"message": "Admin logged out successfully."})
 
