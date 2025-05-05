@@ -413,12 +413,6 @@ async def new_customer(
 
         date_of_birth = datetime.strptime(dob, '%Y-%m-%d').date()
 
-        if not agentID or not isinstance(agentID, str) or len(agentID) < 3:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Invalid agent ID: must be a non-empty string with at least 3 characters."
-            )
-        
         is_name = await agent_validation.validate_text(name, session)
         if not is_name:
             raise HTTPException(
@@ -587,7 +581,7 @@ async def Agent_profile_update(agentID: UUID,
     
     is_phone = await agent_validation.validate_phone(phone, session)
     if not is_phone:
-        raise HTTPException(status_code=400, detail="Invalid phone number: must be a 10-digit number starting with 6-9.")
+        raise HTTPException(status_code=500, detail="Invalid phone number: must be a 10-digit number starting with 6-9.")
 
     is_file = await agent_validation.validate_file_type(image, session)
     if not is_file:

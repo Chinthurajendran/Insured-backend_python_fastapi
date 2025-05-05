@@ -43,10 +43,28 @@ class Validation:
             return False
         return bool(re.match(r"^[A-Za-z\s]+$", text))
     
+    async def titledescription(self, text: str, session: AsyncSession) -> bool:
+        if not text:
+            return False
+        if not re.match(r"^[A-Za-z\s.,'-]+$", text):
+            return False
+        if len(text.strip().split()) < 20:
+            return False
+        return True
+
+    async def description(self, text: str, session: AsyncSession) -> bool:
+        if not text:
+            return False
+        if not re.match(r"^[A-Za-z\s.,'-]+$", text):
+            return False
+        if len(text.strip().split()) < 50:
+            return False
+        return True
+    
     async def validate_city(self, text: str, session: AsyncSession) -> bool:
         if not text:
             return False
-        return bool(re.match(r"^[A-Za-z\s]+$", text))
+        return bool(re.match(r"^[A-Za-z\s.,'-]+$", text))
 
     async def validate_email(self, email: str, session: AsyncSession) -> bool:
         return bool(re.match(r"^[\w\.-]+@[\w\.-]+\.\w{2,4}$", email))

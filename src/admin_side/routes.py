@@ -722,31 +722,34 @@ async def PolicyInfoCreate(
         is_policyinfo_name = await admin_validation.validate_text(policyinfo_name, session)
         if not is_policyinfo_name:
             raise HTTPException(status_code=400, detail="Invalid policyinfo_name: only letters and spaces are allowed.")
-        
-        is_titledescription = await admin_validation.validate_text(titledescription, session)
+        is_titledescription = await admin_validation.titledescription(titledescription, session)
         if not is_titledescription:
             raise HTTPException(status_code=400, detail="Invalid titledescription: only letters and spaces are allowed.")
         
-        is_description = await admin_validation.validate_text(description, session)
+        is_description = await admin_validation.description(description, session)
         if not is_description:
             raise HTTPException(status_code=400, detail="Invalid description: only letters and spaces are allowed.")
         
         is_photo = await admin_validation.validate_file_type(photo, session)
         if not is_photo:
             raise HTTPException(status_code=400, detail="Invalid photo type: only .jpg, .jpeg, or .png files are allowed.")
-    
+        
         policy_info = {
             "policyinfo_name": policyinfo_name,
             "titledescription": titledescription,
             "description": description
         }
+
         created_policy = await admin_service.create_policy_info(policy_info, photo, session)
+
+        logger.info("Policy created successfully.")
         return JSONResponse(status_code=200, content={"message": "Policy created successfully."})
 
     except Exception as e:
+        tb = traceback.format_exc()
+        logger.error(f"An error occurred in PolicyInfoCreate: {str(e)}\n{tb}")
         raise HTTPException(
             status_code=500, detail=f"An error occurred: {str(e)}")
-
 
 @admin_router.get("/Policyinfo_list", response_model=list[dict])
 async def policyinfo_list(session: AsyncSession = Depends(get_session)):
@@ -792,11 +795,11 @@ async def PolicyInfoUpdate(PolicyId: UUID,
         if not is_policyinfo_name:
             raise HTTPException(status_code=400, detail="Invalid policyinfo_name: only letters and spaces are allowed.")
         
-        is_titledescription = await admin_validation.validate_text(titledescription, session)
+        is_titledescription = await admin_validation.titledescription(titledescription, session)
         if not is_titledescription:
             raise HTTPException(status_code=400, detail="Invalid titledescription: only letters and spaces are allowed.")
         
-        is_description = await admin_validation.validate_text(description, session)
+        is_description = await admin_validation.description(description, session)
         if not is_description:
             raise HTTPException(status_code=400, detail="Invalid description: only letters and spaces are allowed.")
         
