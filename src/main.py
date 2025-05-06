@@ -107,21 +107,56 @@ async def chat_websocket_endpoint(
         connection_manager.disconnect(user_id,websocket)
 
 
+# @app.websocket("/ws/webrtc/{user_id}")
+# async def websocket_endpoint(websocket: WebSocket, user_id: str):
+#     await connection_manager.connect(user_id, websocket)
+#     print("#######################################################################")
+#     try:
+#         while True:
+#             data = await websocket.receive_json()
+#             target_id = data.get("target_id")
+#             print("11111111111111111111",target_id)
+#             if target_id:
+#                 await connection_manager.send_personal_message(target_id, data)
+            
+#     except WebSocketDisconnect:
+#         connection_manager.disconnect(user_id, websocket)
+#     except Exception as e:
+#         connection_manager.disconnect(user_id, websocket)
+
+import traceback
 @app.websocket("/ws/webrtc/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
+    print(f"🔌 Incoming WebSocket connection: user_id={user_id}")
+    
     await connection_manager.connect(user_id, websocket)
+    print("✅ Connected")
 
     try:
         while True:
+            print("📥 Waiting for message...")
             data = await websocket.receive_json()
+            print(f"📦 Received data: {data}")
+            
             target_id = data.get("target_id")
+            print(f"🎯 Target ID: {target_id}")
+            
             if target_id:
                 await connection_manager.send_personal_message(target_id, data)
-            
+                print(f"📤 Message forwarded to {target_id}")
+            else:
+                print("⚠️ No target_id provided in message")
+
     except WebSocketDisconnect:
+        print(f"❌ WebSocket disconnected: user_id={user_id}")
         connection_manager.disconnect(user_id, websocket)
+
     except Exception as e:
+        print(f"🔥 Exception in WebSocket handler for user_id={user_id}: {e}")
+        traceback.print_exc()
         connection_manager.disconnect(user_id, websocket)
+
+
 
 # @app.websocket("/ws/webrtcvedio/{user_id}")
 # async def websocket_endpoint(websocket: WebSocket, user_id: str):
