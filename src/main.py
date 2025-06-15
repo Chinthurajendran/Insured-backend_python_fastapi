@@ -1,4 +1,4 @@
-from fastapi import FastAPI,WebSocket,Depends,WebSocketDisconnect
+from fastapi import FastAPI,WebSocket,Depends,WebSocketDisconnect,Request
 from contextlib import asynccontextmanager
 from src.user_side.routes import auth_router
 from src.admin_side.routes import admin_router
@@ -25,6 +25,7 @@ DATABASE_URL =os.getenv("DATABASE_URL1")
 import asyncio
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+from fastapi.responses import Response
 
 chat_service = ChatService() 
 user_service = UserService()
@@ -59,6 +60,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(request: Request, rest_of_path: str):
+    origin = request.headers.get("origin")
+    request_headers = request.headers.get("access-control-request-headers", "*")
+    headers = {
+        "Access-Control-Allow-Origin": origin or "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": request_headers,
+        "Access-Control-Allow-Credentials": "true",
+    }
+    return Response(status_code=204, headers=headers)
 
 UPLOAD_DIR = os.path.join(os.getcwd(), "uploads")
 
