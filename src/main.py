@@ -56,28 +56,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# # === Add COOP and COEP Headers ===
-# class SecureHeadersMiddleware(BaseHTTPMiddleware):
-#     async def dispatch(self, request: Request, call_next):
-#         response: Response = await call_next(request)
-#         response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-#         response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
-#         return response
+# === Add COOP and COEP Headers ===
+class SecureHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+        return response
 
-# app.add_middleware(SecureHeadersMiddleware)
+app.add_middleware(SecureHeadersMiddleware)
 
-# # === OPTIONS (Preflight) Handler ===
-# @app.options("/{rest_of_path:path}")
-# async def preflight_handler(request: Request, rest_of_path: str):
-#     origin = request.headers.get("origin")
-#     request_headers = request.headers.get("access-control-request-headers", "*")
-#     headers = {
-#         "Access-Control-Allow-Origin": origin or "*",
-#         "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-#         "Access-Control-Allow-Headers": request_headers,
-#         "Access-Control-Allow-Credentials": "true",
-#     }
-#     return Response(status_code=204, headers=headers)
+# === OPTIONS (Preflight) Handler ===
+@app.options("/{rest_of_path:path}")
+async def preflight_handler(request: Request, rest_of_path: str):
+    origin = request.headers.get("origin")
+    request_headers = request.headers.get("access-control-request-headers", "*")
+    headers = {
+        "Access-Control-Allow-Origin": origin or "*",
+        "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+        "Access-Control-Allow-Headers": request_headers,
+        "Access-Control-Allow-Credentials": "true",
+    }
+    return Response(status_code=204, headers=headers)
 
 
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
