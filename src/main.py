@@ -26,6 +26,7 @@ import asyncio
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from fastapi.responses import Response
+from starlette.middleware.base import BaseHTTPMiddleware
 
 chat_service = ChatService() 
 user_service = UserService()
@@ -39,11 +40,6 @@ async def lifespan(app: FastAPI):
     print("Server is stopping...")
 
 app = FastAPI(lifespan=lifespan)
-
-app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
-app.include_router(admin_router, prefix="/admin_auth", tags=["Admin Authentication"])
-app.include_router(agent_router, prefix="/agent_auth", tags=["Agent Authentication"])
-app.include_router(messages_router, prefix="/message_auth", tags=["Message Authentication"])
 
 origins = [
     "http://localhost:5173",        
@@ -60,6 +56,17 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# === Add COOP and COEP Headers ===
+class SecureHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        response: Response = await call_next(request)
+        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
+        response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
+        return response
+
+app.add_middleware(SecureHeadersMiddleware)
+
+# === OPTIONS (Preflight) Handler ===
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(request: Request, rest_of_path: str):
     origin = request.headers.get("origin")
@@ -71,6 +78,12 @@ async def preflight_handler(request: Request, rest_of_path: str):
         "Access-Control-Allow-Credentials": "true",
     }
     return Response(status_code=204, headers=headers)
+
+
+app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
+app.include_router(admin_router, prefix="/admin_auth", tags=["Admin Authentication"])
+app.include_router(agent_router, prefix="/agent_auth", tags=["Agent Authentication"])
+app.include_router(messages_router, prefix="/message_auth", tags=["Message Authentication"])
 
 UPLOAD_DIR = os.path.join(os.getcwd(), "uploads")
 
