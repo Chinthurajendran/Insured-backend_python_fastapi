@@ -56,17 +56,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# === Add COOP and COEP Headers ===
-class SecureHeadersMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request: Request, call_next):
-        response: Response = await call_next(request)
-        response.headers["Cross-Origin-Opener-Policy"] = "same-origin"
-        response.headers["Cross-Origin-Embedder-Policy"] = "require-corp"
-        return response
-
-app.add_middleware(SecureHeadersMiddleware)
-
-# === OPTIONS (Preflight) Handler ===
+# Add explicit preflight handler for OPTIONS requests
 @app.options("/{rest_of_path:path}")
 async def preflight_handler(request: Request, rest_of_path: str):
     origin = request.headers.get("origin")
@@ -78,7 +68,6 @@ async def preflight_handler(request: Request, rest_of_path: str):
         "Access-Control-Allow-Credentials": "true",
     }
     return Response(status_code=204, headers=headers)
-
 
 app.include_router(auth_router, prefix="/auth", tags=["Authentication"])
 app.include_router(admin_router, prefix="/admin_auth", tags=["Admin Authentication"])
