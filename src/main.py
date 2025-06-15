@@ -44,11 +44,11 @@ app.include_router(admin_router, prefix="/admin_auth", tags=["Admin Authenticati
 app.include_router(agent_router, prefix="/agent_auth", tags=["Agent Authentication"])
 app.include_router(messages_router, prefix="/message_auth", tags=["Message Authentication"])
 
-
 origins = [
     "http://localhost:5173",        
     "https://www.insuredplus.shop", 
-    "https://api.insuredplus.shop"  
+    "https://api.insuredplus.shop",
+    "https://insured-backend-python-fastapi.onrender.com "
 ]
 
 app.add_middleware(
