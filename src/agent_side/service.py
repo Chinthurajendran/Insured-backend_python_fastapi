@@ -57,7 +57,8 @@ class Validation:
     async def validate_phone(self, phone: str, session: AsyncSession) -> bool:
         if not phone:
             return False
-        return bool(re.match(r"^[6-7]\d{9}$", phone))
+        return bool(re.match(r"^[6-9]\d{9}$", phone))
+
 
     async def validate_file_type(self, image: UploadFile, session: AsyncSession) -> bool:
         if image is None:
