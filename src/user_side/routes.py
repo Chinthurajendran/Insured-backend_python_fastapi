@@ -292,7 +292,8 @@ async def password_recovery(user_email: Passwordrecovery,
 
     user = result.scalars().first()
 
-    reset_link = f"http://localhost:5173/Resetpassword"
+    # reset_link = f"http://localhost:5173/Resetpassword"
+    reset_link = f"http://insuredplus.shop/Resetpassword"
 
     message = MessageSchema(
         subject="Password Reset Request",
